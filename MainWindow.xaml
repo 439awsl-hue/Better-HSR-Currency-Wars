@@ -1,0 +1,355 @@
+﻿<Window x:Class="HsrCurrencyWarsCleanWpf.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Better HSR-Currency Wars V4" Icon="Assets/app.ico" Height="820" Width="1280" MinHeight="720" MinWidth="1120"
+        Background="#EDF3FB">
+    <Window.Resources>
+        <Style TargetType="GroupBox">
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Padding" Value="10" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="Margin" Value="0,0,8,8" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="6,4" />
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="MinHeight" Value="28" />
+        </Style>
+        <Style TargetType="ListBox">
+            <Setter Property="MinHeight" Value="72" />
+            <Setter Property="BorderBrush" Value="#9AA8BA" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style x:Key="MutedText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#607084" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#2F80ED" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#2F80ED" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style x:Key="InGameButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#E7854F" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#E7854F" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#FFF0F4" />
+            <Setter Property="Foreground" Value="#D7265B" />
+            <Setter Property="BorderBrush" Value="#FFF0F4" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="58" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="168" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#13213A" Padding="18,0">
+            <DockPanel LastChildFill="True">
+                <TextBlock DockPanel.Dock="Right" x:Name="StatusText" Text="状态：未运行"
+                           VerticalAlignment="Center" Foreground="White" FontWeight="SemiBold" />
+                <TextBlock Text="Better HSR-Currency Wars V4" VerticalAlignment="Center"
+                           Foreground="White" FontSize="22" FontWeight="Bold" />
+                <TextBlock Text="B站UID19365312   抖音号：71243602656   QQ群794857027   当前工具还在测试中，出现 bug 记得找我哦"
+                           VerticalAlignment="Center" Foreground="White" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" />
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="390" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" BorderBrush="#D7DEE8" BorderThickness="1" Background="#F7FBFF">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="8">
+                        <GroupBox Header="游戏窗口">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="72" />
+                                    <ColumnDefinition Width="84" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="窗口标题包含：" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" />
+                                <TextBox x:Name="WindowTitleBox" Grid.Row="0" Grid.Column="1" Margin="0,0,8,8" />
+                                <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource PrimaryButton}" Click="SaveConfig_Click">保存</Button>
+                                <Button Grid.Row="0" Grid.Column="3" Click="FindWindow_Click">找窗口</Button>
+                                <TextBlock x:Name="WindowInfoText" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
+                                           Text="窗口：未检测" Style="{StaticResource MutedText}" Margin="0,4,0,0" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4"
+                                           Text="F8 仅停止，不负责启动。" Style="{StaticResource MutedText}" Margin="0,4,0,0" />
+                            </Grid>
+                        </GroupBox>
+
+                        <GroupBox Header="速度模式">
+                            <StackPanel>
+                                <DockPanel>
+                                    <TextBlock Text="速度模式：" Width="100" VerticalAlignment="Center" />
+                                    <ComboBox x:Name="SpeedModeBox" SelectedIndex="1">
+                                        <ComboBoxItem Tag="fast" Content="fast" />
+                                        <ComboBoxItem Tag="standard" Content="standard" />
+                                        <ComboBoxItem Tag="slow" Content="slow" />
+                                    </ComboBox>
+                                </DockPanel>
+                                <TextBlock Text="快：加载快/网速好；慢：加载慢/网速慢。" Style="{StaticResource MutedText}" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="目标词条">
+                            <StackPanel>
+                                <CheckBox x:Name="DebuffEnabledBox" Content="开启主词条检测" IsChecked="True" Margin="0,0,0,8" />
+                                <CheckBox x:Name="DebuffMatchAnyBox" Content="任意命中一个词条即可成功"
+                                          Checked="DebuffMatchAny_Changed" Unchecked="DebuffMatchAny_Changed" Margin="0,0,0,10" />
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="84" />
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="TargetWordInputBox" IsEditable="True" IsTextSearchEnabled="False"
+                                              Margin="0,0,10,0" KeyDown="TargetWordInputBox_KeyDown" />
+                                    <Button Grid.Column="1" Style="{StaticResource PrimaryButton}" Click="AddTargetWord_Click">添加</Button>
+                                </Grid>
+                                <WrapPanel>
+                                    <Button Width="108" Style="{StaticResource DangerButton}" Click="DeleteSelectedTargetWord_Click">删除选中</Button>
+                                    <Button Width="76" Style="{StaticResource DangerButton}" Click="ClearTargetWords_Click">清空</Button>
+                                    <TextBlock x:Name="TargetWordsCountText" Text="全部 0 / 任意 20" VerticalAlignment="Center" Style="{StaticResource MutedText}" />
+                                </WrapPanel>
+                                <ListBox x:Name="TargetWordsListBox" />
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="不想要词条">
+                            <StackPanel>
+                                <CheckBox x:Name="BlockedEnabledBox" Content="开启不想要词条过滤（命中任意一个就继续刷）" Margin="0,0,0,10" />
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="84" />
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="BlockedWordInputBox" IsEditable="True" IsTextSearchEnabled="False"
+                                              Margin="0,0,10,0" KeyDown="BlockedWordInputBox_KeyDown" />
+                                    <Button Grid.Column="1" Style="{StaticResource PrimaryButton}" Click="AddBlockedWord_Click">添加</Button>
+                                </Grid>
+                                <WrapPanel>
+                                    <Button Width="108" Style="{StaticResource DangerButton}" Click="DeleteSelectedBlockedWord_Click">删除选中</Button>
+                                    <Button Width="76" Style="{StaticResource DangerButton}" Click="ClearBlockedWords_Click">清空</Button>
+                                    <TextBlock x:Name="BlockedWordsCountText" Text="不想要最多 20" VerticalAlignment="Center" Style="{StaticResource MutedText}" />
+                                </WrapPanel>
+                                <ListBox x:Name="BlockedWordsListBox" />
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="投资识别">
+                            <StackPanel>
+                                <CheckBox x:Name="InvestmentEnabledBox" Content="开启投资识别" Margin="0,0,0,10" />
+                                <CheckBox x:Name="CheckInvestmentWhenBlockedBox"
+                                          Content="命中不想要词条后仍检查投资"
+                                          Margin="0,0,0,10"
+                                          Checked="CheckInvestmentWhenBlocked_Changed"
+                                          Unchecked="CheckInvestmentWhenBlocked_Changed" />
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="84" />
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="InvestmentWordInputBox" IsEditable="True" IsTextSearchEnabled="False"
+                                              Margin="0,0,10,0" KeyDown="InvestmentWordInputBox_KeyDown" />
+                                    <Button Grid.Column="1" Style="{StaticResource PrimaryButton}" Click="AddInvestmentWord_Click">添加</Button>
+                                </Grid>
+                                <WrapPanel>
+                                    <Button Width="108" Style="{StaticResource DangerButton}" Click="DeleteSelectedInvestmentWord_Click">删除选中</Button>
+                                    <Button Width="76" Style="{StaticResource DangerButton}" Click="ClearInvestmentWords_Click">清空</Button>
+                                    <TextBlock x:Name="InvestmentWordsCountText" Text="最多 20，命中即停" VerticalAlignment="Center" Style="{StaticResource MutedText}" />
+                                </WrapPanel>
+                                <ListBox x:Name="InvestmentWordsListBox" />
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <Grid Grid.Column="1" Margin="12,0,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="318" />
+                    <RowDefinition Height="112" />
+                    <RowDefinition Height="190" />
+                    <RowDefinition Height="22" />
+                </Grid.RowDefinitions>
+
+                <GroupBox Header="局外识别 / 局内识别操作面板">
+                    <StackPanel>
+                        <TextBlock Text="注：局内识别按钮不受左侧主词条、不想要词条、投资词条开关影响；只按按钮内置目标运行。"
+                                   Style="{StaticResource MutedText}" Margin="0,0,0,8" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Style="{StaticResource PrimaryButton}" Click="TestDebuffOcr_Click">测试词条 OCR</Button>
+                            <Button Grid.Column="1" Style="{StaticResource PrimaryButton}" Click="TestFullWindowOcr_Click">测试全窗口 OCR</Button>
+                            <Button Grid.Column="2" x:Name="StartAutoButton" Style="{StaticResource PrimaryButton}" Click="StartAutomation_Click">局外识别自动刷新</Button>
+                            <Button Grid.Column="3" x:Name="StopAutoButton" Style="{StaticResource DangerButton}" Click="StopAutomation_Click" IsEnabled="False">停止 F8</Button>
+                        </Grid>
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="104" />
+                            </Grid.ColumnDefinitions>
+                            <GroupBox Header="局内投资目标" Margin="0,0,8,0">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="38" />
+                                        <RowDefinition Height="40" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="84" />
+                                        </Grid.ColumnDefinitions>
+                                        <ComboBox x:Name="InGameInvestmentInputBox" IsEditable="True" IsTextSearchEnabled="False" Margin="0,0,8,0" />
+                                        <Button Grid.Column="1" Style="{StaticResource InGameButton}" Click="AddInGameInvestment_Click">添加</Button>
+                                    </Grid>
+                                    <Grid Grid.Row="1" Margin="0,4,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="104" />
+                                            <ColumnDefinition Width="76" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0" Style="{StaticResource InGameButton}" Margin="0,0,8,0" Click="DeleteSelectedInGameInvestment_Click">删除选中</Button>
+                                        <Button Grid.Column="1" Style="{StaticResource InGameButton}" Margin="0,0,12,0" Click="ClearInGameInvestment_Click">清空</Button>
+                                        <TextBlock Grid.Column="2" x:Name="InGameInvestmentCountText" Text="0 / 20" VerticalAlignment="Center" Style="{StaticResource MutedText}" />
+                                    </Grid>
+                                    <ListBox Grid.Row="2" x:Name="InGameInvestmentListBox" />
+                                </Grid>
+                            </GroupBox>
+                            <GroupBox Grid.Column="1" Header="局内策略目标" Margin="0,0,8,0">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="38" />
+                                        <RowDefinition Height="40" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="84" />
+                                        </Grid.ColumnDefinitions>
+                                        <ComboBox x:Name="InGameStrategyInputBox" IsEditable="True" IsTextSearchEnabled="False" Margin="0,0,8,0" />
+                                        <Button Grid.Column="1" Style="{StaticResource InGameButton}" Click="AddInGameStrategy_Click">添加</Button>
+                                    </Grid>
+                                    <Grid Grid.Row="1" Margin="0,4,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="104" />
+                                            <ColumnDefinition Width="76" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0" Style="{StaticResource InGameButton}" Margin="0,0,8,0" Click="DeleteSelectedInGameStrategy_Click">删除选中</Button>
+                                        <Button Grid.Column="1" Style="{StaticResource InGameButton}" Margin="0,0,12,0" Click="ClearInGameStrategy_Click">清空</Button>
+                                        <TextBlock Grid.Column="2" x:Name="InGameStrategyCountText" Text="0 / 20" VerticalAlignment="Center" Style="{StaticResource MutedText}" />
+                                    </Grid>
+                                    <ListBox Grid.Row="2" x:Name="InGameStrategyListBox" />
+                                </Grid>
+                            </GroupBox>
+                            <StackPanel Grid.Column="2">
+                                <Button x:Name="StartLuochaPresetButton" Style="{StaticResource InGameButton}" Click="StartLuochaPreset_Click" Margin="0,0,0,6">
+                                    <TextBlock TextAlignment="Center">
+                                        <Run Text="刷本姑娘" />
+                                        <LineBreak />
+                                        <Run Text="就是罗刹" />
+                                    </TextBlock>
+                                </Button>
+                                <Button x:Name="StartReincarnationPresetButton" Style="{StaticResource InGameButton}" Click="StartReincarnationPreset_Click" Margin="0,0,0,6">刷轮回不止</Button>
+                                <Button x:Name="StartSandGoldPresetButton" Style="{StaticResource InGameButton}" Click="StartSandGoldPreset_Click" Margin="0,0,0,6">刷砂里淘金</Button>
+                                <Button x:Name="StartCustomInGameButton" Style="{StaticResource InGameButton}" Click="StartCustomInGame_Click">
+                                    <TextBlock TextAlignment="Center">
+                                        <Run Text="局内识别" />
+                                        <LineBreak />
+                                        <Run Text="自定义刷新" />
+                                    </TextBlock>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </GroupBox>
+
+                <Grid Grid.Row="1" Margin="0,2,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <GroupBox Header="固定 OCR 点击流程" Margin="0,0,10,0">
+                        <ListBox x:Name="FlowStepsListBox" />
+                    </GroupBox>
+                    <GroupBox Grid.Column="1" Header="命中结果">
+                        <StackPanel>
+                            <TextBlock x:Name="HitWordsText" Text="已命中：无" Foreground="#008A4B" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <TextBlock x:Name="BlockedHitWordsText" Text="不想要命中：无" Foreground="#D7265B" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <TextBlock x:Name="MissingWordsText" Text="未命中：无" Foreground="#D7265B" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <TextBlock x:Name="DecisionReasonText" Text="当前决策：未评估" Foreground="#243B62" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </GroupBox>
+                </Grid>
+
+                <Grid Grid.Row="2" Margin="0,2,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="280" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <GroupBox Header="OCR 识别文本" Margin="0,0,10,0">
+                        <TextBox x:Name="OcrRawTextBox" IsReadOnly="True" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" />
+                    </GroupBox>
+                    <GroupBox Grid.Column="1" Header="截图预览">
+                        <Grid>
+                            <Image x:Name="PreviewImage" Stretch="Uniform" />
+                            <TextBlock x:Name="PreviewPlaceholder" Text="测试 OCR 后显示截图"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="#243B62" FontWeight="SemiBold" />
+                        </Grid>
+                    </GroupBox>
+                </Grid>
+
+                <DockPanel Grid.Row="3">
+                    <TextBlock Text="说明：主词条使用下半屏 OCR；按钮按指定区域 OCR；Esc 会发给游戏；紧急停止为 F8。"
+                               Style="{StaticResource MutedText}" />
+                    <TextBlock x:Name="CaptureInfoText" Text="截图：未生成" Visibility="Collapsed" />
+                    <TextBlock x:Name="OcrInfoText" Text="OCR：未运行" Visibility="Collapsed" />
+                    <TextBox x:Name="ClickTextBox" Text="下一步" Visibility="Collapsed" />
+                    <TextBox x:Name="EvaluationTextBox" Visibility="Collapsed" />
+                </DockPanel>
+            </Grid>
+        </Grid>
+
+        <GroupBox Header="日志" Grid.Row="2" Margin="8,0,8,8">
+            <TextBox x:Name="LogBox" IsReadOnly="True" AcceptsReturn="True"
+                     VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" />
+        </GroupBox>
+    </Grid>
+</Window>

@@ -1,0 +1,38 @@
+# Build output
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.rsuser
+
+# Rider / JetBrains
+.idea/
+
+# Logs and temp
+*.log
+temp/
+.cache/
+
+# Packages / archives
+*.zip
+*.7z
+*.rar
+
+# User configs / secrets
+.env
+config.json
+settings.json
+token*
+apikey*
+*.db
+
+# Windows
+Thumbs.db
+Desktop.ini
