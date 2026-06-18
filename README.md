@@ -1,6 +1,9 @@
 \# Better HSR-Currency-Wars
 
+## 界面预览
 
+![界面预览](Assets/kukai1.png)
+![界面预览](Assets/kukai2.png)
 
 Better HSR-Currency-Wars 是一个用于《崩坏：星穹铁道》货币战争玩法的 OCR 自动化辅助工具。
 
