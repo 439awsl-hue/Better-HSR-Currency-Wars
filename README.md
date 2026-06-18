@@ -4,7 +4,12 @@
 
 Better HSR-Currency-Wars 是一个用于《崩坏：星穹铁道》货币战争玩法的 OCR 自动化辅助工具。
 
+国服和国际服通用，但只有中文识别
 
+抖音id：71243602656
+看置顶视频教程
+
+解压后以管理员身份运行 Better HSR-Currency Wars V4.exe
 
 \## 功能
 
