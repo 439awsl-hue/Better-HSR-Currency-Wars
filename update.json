@@ -1,6 +1,6 @@
 {
-  "version": "7.0.0",
-  "title": "Better HSR-Currency Wars V7",
+  "version": "8.0.0",
+  "title": "Better HSR-Currency Wars V8",
   "notes": "新增检查更新入口；更新检查改为读取 GitHub Pages update.json，避免 GitHub API 限流。",
   "releasePageUrl": "https://github.com/439awsl-hue/Better-HSR-Currency-Wars/releases/latest",
   "downloadUrl": ""
