@@ -1,0 +1,13 @@
+Recognition resources were copied from moesnow/March7thAssistant for local study and later integration.
+
+Original project:
+https://github.com/moesnow/March7thAssistant
+
+Current folders:
+- Characters: character portrait templates
+- Equipment: Currency Wars equipment and status templates
+- Screens/CurrencyWars: Currency Wars screen templates
+- character_names.json: character filename to display-name mapping
+- currency_wars_recognition.json: Better HSR-Currency Wars recognition manifest and strategy terms
+
+If these resources are distributed with this project, keep the upstream license requirements in mind.

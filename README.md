@@ -1,56 +1,23 @@
-\# Better HSR-Currency-Wars
+# Better HSR-Currency Wars V11.2
 
-## 界面预览
+用于《崩坏：星穹铁道》“货币战争”玩法的 OCR 自动化辅助工具。
 
-<img width="1583" height="1016" alt="ScreenShot_2026-06-25_021220_530" src="https://github.com/user-attachments/assets/b764b59a-d09d-40ae-94d8-7a1c6d433fe4" />
-<img width="1583" height="1016" alt="ScreenShot_2026-06-25_021241_786" src="https://github.com/user-attachments/assets/900da65d-935e-49ca-a592-5b9c0801efeb" />
-<img width="1583" height="1016" alt="ScreenShot_2026-06-25_021227_228" src="https://github.com/user-attachments/assets/78172e7c-ce6b-4679-b74d-614ac6cb7c1a" />
+## 普通用户
 
+请前往 GitHub Releases 下载完整的 V11.2 自包含发行包。发行包包含 OCR 运行环境，不要求系统预装 .NET Desktop Runtime。
 
-Better HSR-Currency-Wars 是一个用于《崩坏：星穹铁道》货币战争玩法的 OCR 自动化辅助工具。
+## 源码
 
-国服和国际服通用，但只有中文识别
+- 主项目：`Better HSR-Currency Wars V11.csproj`
+- 局外流程：`HsrCurrencyWarsCleanWpf/Core/CurrencyWarsFlow.cs`
+- 局内流程：`HsrCurrencyWarsCleanWpf/Core/InGameOpeningFlow.cs`
+- 主界面与自动化编排：`HsrCurrencyWarsCleanWpf/MainWindow.cs`
+- OCR 桥接源码：`Tools/rapidocr_bridge.py`
 
-抖音id：71243602656
-看置顶视频教程
+本机配置文件 `config.clean.json`、编译输出和 OCR 可执行文件不会提交到源码仓库。
 
-解压后以管理员身份运行 Better HSR-Currency Wars V5.exe
+## 说明
 
-\## 功能
-
-
-
-\- 识别货币战争开局词条
-
-\- 自动刷新词条
-
-\- 命中目标词条后停止
-
-\- 提供图形界面设置
-
-
-
-\## 下载
-
-
-
-普通用户请前往 Releases 下载打包版本。
-
-
-
-\## 源码运行
-
-
-
-```bash
-
-pip install -r requirements.txt
-
-python main.py
-
-注意事项
-
-
+V11 工程由本机现有发布物恢复，并参考早期 V4 源码校验核心流程。恢复及构建信息见 `RECOVERY.md`。
 
 本项目仅供学习和交流使用。
-

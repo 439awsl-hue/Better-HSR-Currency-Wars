@@ -1,0 +1,531 @@
+{
+  "source": {
+    "project": "moesnow/March7thAssistant",
+    "localPath": "C:\\Users\\SHINELON\\Desktop\\March7thAssistant_full\\March7thAssistant-main\\March7thAssistant-main",
+    "note": "暂存 March7thAssistant 的货币战争识别资源和策略词条，后续按本工具自己的流程接入。"
+  },
+  "characters": {
+    "nameMap": "character_names.json",
+    "templateDirectory": "Characters",
+    "recognitionMethod": "image-template",
+    "note": "角色头像模板用于识别前台、后台、备战席格子里的角色。"
+  },
+  "equipment": {
+    "templateDirectory": "Equipment",
+    "recognitionMethod": "image-template",
+    "templates": {
+      "aglaea3": "阿格莱雅三星",
+      "seele3": "希儿三星",
+      "boots": "反重力皮靴",
+      "shoe": "轮滑鞋",
+      "chainsaw": "高周波电锯",
+      "electromagnetic_launcher": "电磁弹射器",
+      "firestorm": "火力风暴潮",
+      "chasing_stars": "追逐星辰",
+      "step_bloom": "步步生花",
+      "meteor_wing": "流星飞翼",
+      "lightspeed_propeller": "光速螺旋桨",
+      "lightning_shoe": "电光履",
+      "starship_cleaver": "碎星斩舰刀",
+      "weapon_master": "武器大师",
+      "bloodshot_eye": "杀红眼",
+      "confidence_injector": "信心注入器",
+      "kinetic_blade": "动能激发剑",
+      "battlefield_manual": "战场进化手册",
+      "orbital_cannon": "天基轨道炮",
+      "anti_satellite_sniper": "反卫星狙击枪",
+      "cover_generator_gun": "掩体生成枪",
+      "adaptive_exoskeleton": "自适应外骨骼",
+      "decapitation_action": "斩首行动",
+      "energy_sail": "蓄能帆",
+      "random_dice": "随便骰子",
+      "boiling_blood_fist": "热血沸腾拳",
+      "tooth_for_tooth_armor": "以牙还牙甲",
+      "victory_banner": "胜利之旗",
+      "cold_joke_engine": "冷笑话引擎",
+      "life_ring": "生命之环",
+      "pain_blocking_chip": "痛觉阻断芯片",
+      "matter_decomposer": "物质分解液",
+      "absolute_heat": "绝对热量",
+      "hard_armor": "很硬的甲",
+      "flash_grenade": "闪光手榴弹",
+      "energy_shield": "光能盾牌",
+      "wormhole_drill": "虫洞掘进钻头",
+      "planet_drill_bomb": "行星钻地弹",
+      "projector": "员工投影仪",
+      "projector2": "完美员工投影仪",
+      "propeller": "螺旋桨",
+      "stove": "炉子",
+      "token": "令牌",
+      "wrench": "扳手",
+      "wrench2": "金扳手",
+      "e1": "折叠小刀",
+      "e2": "和平手枪",
+      "e3": "幸运星",
+      "e4": "生命之花",
+      "e5": "量产型装甲",
+      "e6": "以太钻头",
+      "e7": "光能电池"
+    },
+    "basicEquipment": [
+      "shoe",
+      "e1",
+      "e2",
+      "e3",
+      "e4",
+      "e5",
+      "e6",
+      "e7"
+    ],
+    "recipes": [
+      {
+        "result": "boots",
+        "materials": [
+          "shoe",
+          "shoe"
+        ],
+        "note": "轮滑鞋 + 轮滑鞋 = 反重力皮靴"
+      },
+      {
+        "result": "firestorm",
+        "materials": [
+          "shoe",
+          "e1"
+        ],
+        "note": "轮滑鞋 + 折叠小刀 = 火力风暴潮"
+      },
+      {
+        "result": "electromagnetic_launcher",
+        "displayName": "电磁弹射器",
+        "materials": [
+          "shoe",
+          "e2"
+        ],
+        "note": "轮滑鞋 + 和平手枪 = 电磁弹射器"
+      },
+      {
+        "result": "chasing_stars",
+        "displayName": "追逐星辰",
+        "materials": [
+          "shoe",
+          "e3"
+        ],
+        "note": "轮滑鞋 + 幸运星 = 追逐星辰"
+      },
+      {
+        "result": "step_bloom",
+        "displayName": "步步生花",
+        "materials": [
+          "shoe",
+          "e4"
+        ],
+        "note": "轮滑鞋 + 生命之花 = 步步生花"
+      },
+      {
+        "result": "meteor_wing",
+        "displayName": "流星飞翼",
+        "materials": [
+          "shoe",
+          "e5"
+        ],
+        "note": "轮滑鞋 + 量产型装甲 = 流星飞翼"
+      },
+      {
+        "result": "lightspeed_propeller",
+        "displayName": "光速螺旋桨",
+        "materials": [
+          "shoe",
+          "e6"
+        ],
+        "note": "轮滑鞋 + 以太钻头 = 光速螺旋桨"
+      },
+      {
+        "result": "lightning_shoe",
+        "displayName": "电光履",
+        "materials": [
+          "shoe",
+          "e7"
+        ],
+        "note": "轮滑鞋 + 光能电池 = 电光履"
+      },
+      {
+        "result": "starship_cleaver",
+        "materials": [
+          "e1",
+          "e1"
+        ],
+        "note": "折叠小刀 + 折叠小刀 = 碎星斩舰刀"
+      },
+      {
+        "result": "weapon_master",
+        "materials": [
+          "e1",
+          "e2"
+        ],
+        "note": "折叠小刀 + 和平手枪 = 武器大师"
+      },
+      {
+        "result": "chainsaw",
+        "materials": [
+          "e1",
+          "e3"
+        ],
+        "note": "折叠小刀 + 幸运星 = 高周波电锯"
+      },
+      {
+        "result": "bloodshot_eye",
+        "materials": [
+          "e1",
+          "e4"
+        ],
+        "note": "折叠小刀 + 生命之花 = 杀红眼"
+      },
+      {
+        "result": "confidence_injector",
+        "materials": [
+          "e1",
+          "e5"
+        ],
+        "note": "折叠小刀 + 量产型装甲 = 信心注入器"
+      },
+      {
+        "result": "kinetic_blade",
+        "materials": [
+          "e1",
+          "e6"
+        ],
+        "note": "折叠小刀 + 以太钻头 = 动能激发剑"
+      },
+      {
+        "result": "battlefield_manual",
+        "materials": [
+          "e1",
+          "e7"
+        ],
+        "note": "折叠小刀 + 光能电池 = 战场进化手册"
+      },
+      {
+        "result": "orbital_cannon",
+        "materials": [
+          "e2",
+          "e2"
+        ],
+        "note": "和平手枪 + 和平手枪 = 天基轨道炮"
+      },
+      {
+        "result": "anti_satellite_sniper",
+        "materials": [
+          "e2",
+          "e3"
+        ],
+        "note": "和平手枪 + 幸运星 = 反卫星狙击枪"
+      },
+      {
+        "result": "cover_generator_gun",
+        "materials": [
+          "e2",
+          "e4"
+        ],
+        "note": "和平手枪 + 生命之花 = 掩体生成枪"
+      },
+      {
+        "result": "adaptive_exoskeleton",
+        "materials": [
+          "e2",
+          "e5"
+        ],
+        "note": "和平手枪 + 量产型装甲 = 自适应外骨骼"
+      },
+      {
+        "result": "decapitation_action",
+        "materials": [
+          "e2",
+          "e6"
+        ],
+        "note": "和平手枪 + 以太钻头 = 斩首行动"
+      },
+      {
+        "result": "energy_sail",
+        "materials": [
+          "e2",
+          "e7"
+        ],
+        "note": "和平手枪 + 光能电池 = 蓄能帆"
+      },
+      {
+        "result": "random_dice",
+        "materials": [
+          "e3",
+          "e3"
+        ],
+        "note": "幸运星 + 幸运星 = 随便骰子"
+      },
+      {
+        "result": "boiling_blood_fist",
+        "materials": [
+          "e3",
+          "e4"
+        ],
+        "note": "幸运星 + 生命之花 = 热血沸腾拳"
+      },
+      {
+        "result": "tooth_for_tooth_armor",
+        "materials": [
+          "e3",
+          "e5"
+        ],
+        "note": "幸运星 + 量产型装甲 = 以牙还牙甲"
+      },
+      {
+        "result": "victory_banner",
+        "materials": [
+          "e3",
+          "e6"
+        ],
+        "note": "幸运星 + 以太钻头 = 胜利之旗"
+      },
+      {
+        "result": "cold_joke_engine",
+        "materials": [
+          "e3",
+          "e7"
+        ],
+        "note": "幸运星 + 光能电池 = 冷笑话引擎"
+      },
+      {
+        "result": "life_ring",
+        "materials": [
+          "e4",
+          "e4"
+        ],
+        "note": "生命之花 + 生命之花 = 生命之环"
+      },
+      {
+        "result": "pain_blocking_chip",
+        "materials": [
+          "e4",
+          "e5"
+        ],
+        "note": "生命之花 + 量产型装甲 = 痛觉阻断芯片"
+      },
+      {
+        "result": "matter_decomposer",
+        "materials": [
+          "e4",
+          "e6"
+        ],
+        "note": "生命之花 + 以太钻头 = 物质分解液"
+      },
+      {
+        "result": "absolute_heat",
+        "materials": [
+          "e4",
+          "e7"
+        ],
+        "note": "生命之花 + 光能电池 = 绝对热量"
+      },
+      {
+        "result": "hard_armor",
+        "materials": [
+          "e5",
+          "e5"
+        ],
+        "note": "量产型装甲 + 量产型装甲 = 很硬的甲"
+      },
+      {
+        "result": "flash_grenade",
+        "materials": [
+          "e5",
+          "e6"
+        ],
+        "note": "量产型装甲 + 以太钻头 = 闪光手榴弹"
+      },
+      {
+        "result": "energy_shield",
+        "materials": [
+          "e5",
+          "e7"
+        ],
+        "note": "量产型装甲 + 光能电池 = 光能盾牌"
+      },
+      {
+        "result": "wormhole_drill",
+        "materials": [
+          "e6",
+          "e6"
+        ],
+        "note": "以太钻头 + 以太钻头 = 虫洞掘进钻头"
+      },
+      {
+        "result": "planet_drill_bomb",
+        "materials": [
+          "e6",
+          "e7"
+        ],
+        "note": "以太钻头 + 光能电池 = 行星钻地弹"
+      }
+    ],
+    "aliases": {
+      "projector": [
+        "复制器"
+      ],
+      "projector2": [
+        "完美投影",
+        "金复制"
+      ],
+      "wrench": [
+        "拆装扳手"
+      ],
+      "wrench2": [
+        "金拆装扳手"
+      ]
+    },
+    "notes": {
+      "aglaea3": "阿格莱雅相关三星模板，不作为普通装备处理。",
+      "seele3": "希儿相关三星模板，不作为普通装备处理。",
+      "projector": "普通复制类装备，只能复制 3 费及以下角色。",
+      "projector2": "稀有复制类装备，可用于所有角色；策略上可粗略限制在 4 费和 5 费角色。",
+      "wrench": "普通扳手，有次数限制。",
+      "wrench2": "金色扳手，没有次数限制。"
+    }
+  },
+  "screens": {
+    "currencyWarsTemplateDirectory": "Screens/CurrencyWars",
+    "templates": [
+      "exit",
+      "homepage",
+      "level_1",
+      "level_down",
+      "mode_select",
+      "mode_select_normal",
+      "mode_select_overclock",
+      "new",
+      "pos_backward",
+      "pos_forward"
+    ]
+  },
+  "strategyTerms": {
+    "investmentEnvironmentWhitelist": {
+      "aglaea": [
+        "昼之半神概念股",
+        "能量概念股",
+        "火药味",
+        "过剩经费",
+        "红钻贵族",
+        "蓝钻贵族",
+        "增发货币",
+        "成功经验",
+        "二手市场",
+        "昼之半神邀请",
+        "量子同频邀请",
+        "能量邀请",
+        "特权阶级",
+        "公司军火更新",
+        "超光速提拔",
+        "自由市场",
+        "优势火力论",
+        "淘金客"
+      ],
+      "seele": [
+        "量子同频契约",
+        "人才储备",
+        "量子同频邀请",
+        "贝洛伯格概念股",
+        "长线利好",
+        "增发货币",
+        "经济过热",
+        "经济严重过热",
+        "钢铁美学",
+        "量子力学",
+        "枪在手"
+      ]
+    },
+    "investmentEnvironmentAvoid": [
+      "深井角斗场",
+      "佩佩客串",
+      "钻石商人",
+      "现金为王",
+      "降本增效",
+      "大裁员",
+      "人力重组",
+      "全员晋升",
+      "节省工位",
+      "奋斗协议",
+      "专家研讨会",
+      "快请专家",
+      "英雄登场",
+      "命运礼物",
+      "独家代言",
+      "全都要",
+      "广聚天下英才",
+      "阿哈大悦",
+      "好运来"
+    ],
+    "bossTagRestart": {
+      "aglaea": {
+        "always": [
+          "沉重脚步",
+          "能量逃逸",
+          "忍无可忍",
+          "同步行动",
+          "决战在即",
+          "战个痛快",
+          "正当防卫",
+          "免死金牌",
+          "榜样激励",
+          "永久创伤",
+          "变宝为废",
+          "额外打击"
+        ],
+        "whenMoreThanOne": [
+          "雷之熄火",
+          "一鼓作气",
+          "应激反应",
+          "灼热轰炸",
+          "忽快忽慢",
+          "成长的烦恼",
+          "极速制冷",
+          "坠入陷阱"
+        ]
+      },
+      "seele": {
+        "always": [
+          "极速制冷",
+          "量子熄火",
+          "免死金牌",
+          "忽快忽慢",
+          "坠入陷阱",
+          "沉重脚步",
+          "忍无可忍",
+          "同步行动",
+          "正当防卫",
+          "榜样激励",
+          "永久创伤",
+          "变宝为废",
+          "额外打击"
+        ],
+        "whenMoreThanOne": [
+          "一鼓作气",
+          "应激反应",
+          "决战在即",
+          "战个痛快"
+        ]
+      }
+    }
+  },
+  "characterCosts": {
+    "阿格莱雅": 1,
+    "藿藿": 1,
+    "风堇": 2,
+    "缇宝": 2,
+    "花火": 2,
+    "佩拉": 2,
+    "希儿": 3,
+    "星期日": 3,
+    "刻律德菈": 3,
+    "符玄": 4,
+    "银狼": 4,
+    "瓦尔特": 5,
+    "昔涟": 5
+  }
+}
