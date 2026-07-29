@@ -4,7 +4,7 @@
 
 ## 普通用户
 
-请前往 GitHub Releases 下载完整的 V11.2 自包含发行包。发行包包含 OCR 运行环境，不要求系统预装 .NET Desktop Runtime。
+请前往 GitHub Releases 下载完整的 V1XX 自包含发行包。发行包包含 OCR 运行环境，不要求系统预装 .NET Desktop Runtime。
 
 ## 源码
 
