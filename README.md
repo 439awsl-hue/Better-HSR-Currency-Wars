@@ -1,4 +1,4 @@
-# Better HSR-Currency Wars V11.2
+# Better HSR-Currency Wars V1XX
 
 用于《崩坏：星穹铁道》“货币战争”玩法的 OCR 自动化辅助工具。
 
