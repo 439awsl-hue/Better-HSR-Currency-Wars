@@ -1,7 +1,7 @@
 {
-  "version": "11.2.0",
-  "title": "Better HSR-Currency Wars V11.2",
-  "notes": "更新局内与局外识别流程，新增祈愿试炼处理，优化投资与策略识别等待及刷新逻辑。",
+  "version": "12.8.0",
+  "title": "Better HSR-Currency Wars V12.8",
+  "notes": "新增游戏窗口优化（测试）；主词条、不想要词条和局内策略识别阈值统一为 85；局外+局内未填写局内策略目标时跳过棋盘和出战，直接退出结算返回下一轮。",
   "releasePageUrl": "https://github.com/439awsl-hue/Better-HSR-Currency-Wars/releases/latest",
   "downloadUrl": ""
 }

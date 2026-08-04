@@ -1,0 +1,209 @@
+<Window x:Class="HsrCurrencyWarsCleanWpf.ReleaseNotesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="V12.8 更新内容"
+        Width="640" Height="520"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        FontFamily="Microsoft YaHei UI">
+  <Window.Resources>
+    <SolidColorBrush x:Key="TextBrush" Color="#1B2230" />
+    <SolidColorBrush x:Key="MutedBrush" Color="#68768A" />
+    <SolidColorBrush x:Key="LineBrush" Color="#B7CDE3" />
+    <SolidColorBrush x:Key="PrimaryBrush" Color="#5FAFE6" />
+    <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#529FDC" />
+    <Style x:Key="RoundedButton" TargetType="Button">
+      <Setter Property="Height" Value="40" />
+      <Setter Property="Padding" Value="22,0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="11">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource PrimaryHoverBrush}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+
+  <Border Margin="18" CornerRadius="18" Background="#F7FBFF" BorderBrush="#BED3E7" BorderThickness="1">
+    <Border.Effect>
+      <DropShadowEffect BlurRadius="28" ShadowDepth="5" Direction="270" Opacity="0.22" Color="#60758A" />
+    </Border.Effect>
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="66" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="78" />
+      </Grid.RowDefinitions>
+
+      <Border Grid.Row="0" Background="#EEF7FD" CornerRadius="18,18,0,0" MouseLeftButtonDown="Header_MouseLeftButtonDown">
+        <Grid Margin="22,0,14,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="48" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="38" />
+          </Grid.ColumnDefinitions>
+          <Image Source="Assets/app.ico" Width="38" Height="38" Stretch="Uniform" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+            <TextBlock Text="Better HSR-Currency Wars" Foreground="{StaticResource TextBrush}" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Text="欢迎使用 V12.8" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,2,0,0" />
+          </StackPanel>
+          <Button Grid.Column="2" Content="×" Click="Close_Click" Width="32" Height="32" FontSize="22" Foreground="#68768A" Background="Transparent" BorderThickness="0" Cursor="Hand" />
+        </Grid>
+      </Border>
+
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="26,18,20,8">
+        <StackPanel>
+          <TextBlock Text="本次更新" Foreground="{StaticResource TextBrush}" FontSize="24" FontWeight="Bold" Margin="0,0,0,14" />
+
+          <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="13" Padding="16" Margin="0,0,0,12">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="62" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border Width="48" Height="26" CornerRadius="13" Background="#DDF2FC" VerticalAlignment="Top">
+                <TextBlock Text="V12.8" Foreground="#315C80" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="游戏窗口优化（测试）" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="新增窗口优化入口：检查游戏客户区是否为 1920×1080；不符合时尝试打开设置并选择合适的 1920×1080 窗口模式。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,9" />
+                <TextBlock Text="OCR 阈值调整" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="主词条、不想要词条和局内策略识别阈值统一调整为 85；投资词条保持 88，页面按钮保持 78。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,9" />
+                <TextBlock Text="组合流程减少无效出战" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="“局外+局内”未填写局内策略目标时，不再进入棋盘、部署角色和出战，完成前置判断后直接退出结算并返回下一轮。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,0" />
+              </StackPanel>
+            </Grid>
+          </Border>
+
+          <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="13" Padding="16" Margin="0,0,0,12">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="62" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border Width="48" Height="26" CornerRadius="13" Background="#DDF2FC" VerticalAlignment="Top">
+                <TextBlock Text="V12.7" Foreground="#315C80" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="自动战斗固定图标识别" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="改为匹配左下角明确的“自动战斗关闭”固定图标，只有相似度达到要求才按 V。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,9" />
+                <TextBlock Text="降低状态误判" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="移除右上角黄色与灰白像素比例判断，并在战斗过程中持续复查，减少特效、亮度、缩放及副屏造成的误判。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,0" />
+              </StackPanel>
+            </Grid>
+          </Border>
+
+		  <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="13" Padding="16" Margin="0,0,0,12">
+			<Grid>
+			  <Grid.ColumnDefinitions>
+				<ColumnDefinition Width="62" />
+				<ColumnDefinition Width="*" />
+			  </Grid.ColumnDefinitions>
+			  <Border Width="48" Height="26" CornerRadius="13" Background="#DDF2FC" VerticalAlignment="Top">
+				<TextBlock Text="V12.6" Foreground="#315C80" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+			  </Border>
+			  <StackPanel Grid.Column="1">
+				<TextBlock Text="蓝海兜底顺序修正" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+				<TextBlock Text="正常选择投资卡并完成底部固定确认后，再执行蓝海二段固定点位兜底，避免在确认前改动已经选中的投资。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,9" />
+				<TextBlock Text="减少固定兜底点击" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+				<TextBlock Text="普通局外、独立局内与局外+局内统一执行顺序，固定兜底由 4 轮缩短为 2 轮。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,0" />
+			  </StackPanel>
+			</Grid>
+		  </Border>
+
+          <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="13" Padding="16" Margin="0,0,0,12">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="62" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border Width="48" Height="26" CornerRadius="13" Background="#DDF2FC" VerticalAlignment="Top">
+                <TextBlock Text="V12.5" Foreground="#315C80" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="投资与策略自定义优先级" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="投资目标和局内策略支持上移、下移；同时识别到多个目标时，优先选择列表中靠上的项目。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,9" />
+                <TextBlock Text="配置界面紧凑化" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="缩小局外、局内及组合流程的投资和策略控件，保留原字体大小。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,0" />
+              </StackPanel>
+            </Grid>
+          </Border>
+
+          <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="13" Padding="16" Margin="0,0,0,12">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="62" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border Width="48" Height="26" CornerRadius="13" Background="#DDF2FC" VerticalAlignment="Top">
+                <TextBlock Text="V12.4" Foreground="#315C80" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="开局流程加速" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="前三页改为共同固定点位连续点击 3.5 秒，结束后直接开始主词条 OCR，减少重复全屏识别。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,9" />
+                <TextBlock Text="结算返回加速" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="识别到“下一步”后立即固定连点 6 次，不再分别等待“下一页”和“返回货币战争”。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,9" />
+                <TextBlock Text="恢复旧版蓝海固定兜底" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="普通局外投资未命中目标时，恢复中间选项与确认按钮固定点来回点击 4 轮。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,0" />
+              </StackPanel>
+            </Grid>
+          </Border>
+
+          <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="13" Padding="16" Margin="0,0,0,12">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="62" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border Width="48" Height="26" CornerRadius="13" Background="#DDF2FC" VerticalAlignment="Top">
+                <TextBlock Text="V12.3" Foreground="#315C80" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="副屏与缩放兼容" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="新增副屏截图与每显示器 DPI 适配，完善副屏环境下的 OCR、点击和窗口坐标。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,9" />
+                <TextBlock Text="慢速流程与自动战斗优化" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="大步骤会确认目标下一页后再继续；优化自动战斗图标亮暗判断，减少网络较慢或缩放环境下的误判。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,9" />
+                <TextBlock Text="投资与策略选择完善" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="忽略投资目标时仍会避开蓝海与特殊专家；可设置未命中投资也进局，并优先选择图鉴未收录的投资或策略。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,9" />
+                <TextBlock Text="稳定性细节" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="完善备战角色拖拽、OCR 长时间运行维护、日志上限及结算返回流程。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="21" Margin="0,5,0,0" />
+              </StackPanel>
+            </Grid>
+          </Border>
+
+          <Border Background="#FFF8F3" BorderBrush="#F3C9AE" BorderThickness="1" CornerRadius="12" Padding="14">
+            <TextBlock Text="提示：运行工具时请右键程序，选择“以管理员身份运行”。" Foreground="#9B5A34" TextWrapping="Wrap" />
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+
+      <Border Grid.Row="2" BorderBrush="#D5E3F0" BorderThickness="0,1,0,0" Background="White" CornerRadius="0,0,18,18">
+        <Grid Margin="24,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <CheckBox x:Name="DoNotShowAgainBox" Content="本版本不再显示" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Cursor="Hand" FocusVisualStyle="{x:Null}" />
+          <Button Grid.Column="1" Content="我知道了" Style="{StaticResource RoundedButton}" Click="Confirm_Click" VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+    </Grid>
+  </Border>
+</Window>

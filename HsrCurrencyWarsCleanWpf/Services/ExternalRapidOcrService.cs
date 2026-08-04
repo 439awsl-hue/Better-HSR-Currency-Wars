@@ -70,6 +70,8 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 
 	private Process? _process;
 
+	private DateTime _processStartedAtUtc;
+
 	public string Name { get; }
 
 	public ExternalRapidOcrService(string executablePath, string? bridgeScript = null, TimeSpan? timeout = null)
@@ -83,24 +85,14 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 	public async Task<OcrScanResult> RecognizeAsync(BitmapSource image, CancellationToken cancellationToken = default(CancellationToken))
 	{
 		await _requestLock.WaitAsync(cancellationToken);
-		string tempPath = Path.Combine(Path.GetTempPath(), $"hsr-clean-ocr-{Guid.NewGuid():N}.png");
 		bool shouldRestartProcess = false;
 		try
 		{
-			SavePng(image, tempPath);
-			string request = JsonSerializer.Serialize(new
-			{
-				image_path = tempPath
-			});
-			OcrBridgeResponse response = JsonSerializer.Deserialize<OcrBridgeResponse>(await SendRequestAsync(request, cancellationToken), JsonOptions);
+			byte[] imageBytes = EncodePng(image);
+			OcrBridgeResponse response = JsonSerializer.Deserialize<OcrBridgeResponse>(await SendRequestAsync(imageBytes, cancellationToken), JsonOptions);
 			if (response == null || !string.IsNullOrWhiteSpace(response.Error))
 			{
-				string? obj = response?.Error ?? "OCR 返回为空。";
-				if (IsStaleTempFileError(obj))
-				{
-					shouldRestartProcess = true;
-				}
-				throw new InvalidOperationException(obj);
+				throw new InvalidOperationException(response?.Error ?? "OCR 返回为空。");
 			}
 			List<OcrTextItem> items = (from item in response.Items
 				select new OcrTextItem(item.Text ?? "", new Rect(item.Bounds.X, item.Bounds.Y, item.Bounds.Width, item.Bounds.Height), item.Confidence) into item
@@ -124,36 +116,57 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 			{
 				RestartProcess();
 			}
-			TryDelete(tempPath);
 			_requestLock.Release();
 		}
 	}
 
 	public void Dispose()
 	{
-		if (_process == null)
-		{
-			return;
-		}
 		try
 		{
-			if (!_process.HasExited)
-			{
-				_process.Kill(entireProcessTree: true);
-			}
-		}
-		catch
-		{
+			RestartProcess();
 		}
 		finally
 		{
-			_process.Dispose();
 			_requestLock.Dispose();
-			_process = null;
 		}
 	}
 
-	private async Task<string> SendRequestAsync(string request, CancellationToken cancellationToken)
+	public bool IsMaintenanceRestartDue(TimeSpan interval)
+	{
+		try
+		{
+			Process? process = _process;
+			return process != null
+				&& !process.HasExited
+				&& _processStartedAtUtc != default(DateTime)
+				&& DateTime.UtcNow - _processStartedAtUtc >= interval;
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	public async Task<bool> RestartForMaintenanceIfDueAsync(TimeSpan interval, CancellationToken cancellationToken)
+	{
+		await _requestLock.WaitAsync(cancellationToken);
+		try
+		{
+			if (!IsMaintenanceRestartDue(interval))
+			{
+				return false;
+			}
+			RestartProcess();
+			return true;
+		}
+		finally
+		{
+			_requestLock.Release();
+		}
+	}
+
+	private async Task<string> SendRequestAsync(byte[] imageBytes, CancellationToken cancellationToken)
 	{
 		EnsureProcess();
 		if (_process?.StandardInput == null || _process.StandardOutput == null)
@@ -165,8 +178,15 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 		_ = 2;
 		try
 		{
-			await _process.StandardInput.WriteLineAsync(request.AsMemory(), linkedCts.Token);
-			await _process.StandardInput.FlushAsync(linkedCts.Token);
+			string header = JsonSerializer.Serialize(new
+			{
+				image_size = imageBytes.Length
+			}) + "\n";
+			byte[] headerBytes = Encoding.UTF8.GetBytes(header);
+			Stream input = _process.StandardInput.BaseStream;
+			await input.WriteAsync(headerBytes.AsMemory(), linkedCts.Token);
+			await input.WriteAsync(imageBytes.AsMemory(), linkedCts.Token);
+			await input.FlushAsync(linkedCts.Token);
 			string obj = await _process.StandardOutput.ReadLineAsync(linkedCts.Token);
 			if (string.IsNullOrWhiteSpace(obj))
 			{
@@ -187,7 +207,21 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 			Process process = _process;
 			if (process != null && !process.HasExited)
 			{
-				_process.Kill(entireProcessTree: true);
+				try
+				{
+					byte[] shutdownRequest = Encoding.UTF8.GetBytes("{\"command\":\"shutdown\"}\n");
+					Stream input = process.StandardInput.BaseStream;
+					input.Write(shutdownRequest, 0, shutdownRequest.Length);
+					input.Flush();
+				}
+				catch
+				{
+				}
+				if (!process.WaitForExit(3000))
+				{
+					process.Kill(entireProcessTree: true);
+					process.WaitForExit(2000);
+				}
 			}
 		}
 		catch
@@ -197,16 +231,8 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 		{
 			_process?.Dispose();
 			_process = null;
+			_processStartedAtUtc = default(DateTime);
 		}
-	}
-
-	private static bool IsStaleTempFileError(string error)
-	{
-		if (error.Contains("hsr-clean-ocr-", StringComparison.OrdinalIgnoreCase))
-		{
-			return error.Contains("does not exist", StringComparison.OrdinalIgnoreCase);
-		}
-		return false;
 	}
 
 	private void EnsureProcess()
@@ -223,33 +249,36 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 				RedirectStandardOutput = true,
 				RedirectStandardError = true,
 				CreateNoWindow = true,
+				WorkingDirectory = Path.GetDirectoryName(_executablePath) ?? AppContext.BaseDirectory,
 				StandardInputEncoding = Encoding.UTF8,
 				StandardOutputEncoding = Encoding.UTF8,
 				StandardErrorEncoding = Encoding.UTF8
 			};
 			_process = Process.Start(startInfo) ?? throw new InvalidOperationException("无法启动 OCR Python 进程。");
+			_processStartedAtUtc = DateTime.UtcNow;
+			_ = DrainStandardErrorAsync(_process);
 		}
 	}
 
-	private static void SavePng(BitmapSource image, string path)
-	{
-		PngBitmapEncoder encoder = new PngBitmapEncoder();
-		encoder.Frames.Add(BitmapFrame.Create(image));
-		using FileStream stream = File.Create(path);
-		encoder.Save(stream);
-	}
-
-	private static void TryDelete(string path)
+	private static async Task DrainStandardErrorAsync(Process process)
 	{
 		try
 		{
-			if (File.Exists(path))
+			while (await process.StandardError.ReadLineAsync() != null)
 			{
-				File.Delete(path);
 			}
 		}
 		catch
 		{
 		}
+	}
+
+	private static byte[] EncodePng(BitmapSource image)
+	{
+		PngBitmapEncoder encoder = new PngBitmapEncoder();
+		encoder.Frames.Add(BitmapFrame.Create(image));
+		using MemoryStream stream = new MemoryStream();
+		encoder.Save(stream);
+		return stream.ToArray();
 	}
 }

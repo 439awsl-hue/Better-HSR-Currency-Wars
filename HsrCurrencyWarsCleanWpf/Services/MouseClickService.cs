@@ -13,7 +13,15 @@ public sealed class MouseClickService : IClickService
 
 	private const uint MouseeventfLeftup = 4u;
 
+	private const uint MouseeventfWheel = 2048u;
+
 	private const byte VkEscape = 27;
+
+	private const byte VkV = 86;
+
+	private const byte VkMenu = 18;
+
+	private const byte VkReturn = 13;
 
 	private const uint KeyeventfKeyup = 2u;
 
@@ -58,19 +66,72 @@ public sealed class MouseClickService : IClickService
 		return new ClickResult(Performed: true, $"Real drag: {request.Reason} @ {request.StartScreenX},{request.StartScreenY} -> {request.EndScreenX},{request.EndScreenY}");
 	}
 
+	public async Task<ClickResult> ScrollAsync(int screenX, int screenY, int wheelDelta, nint windowHandle, CancellationToken cancellationToken = default(CancellationToken))
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		TryActivateWindow(windowHandle);
+		await Task.Delay(120, cancellationToken);
+		if (!SetCursorPos(screenX, screenY))
+		{
+			throw new InvalidOperationException("Move cursor failed.");
+		}
+		await Task.Delay(80, cancellationToken);
+		mouse_event(MouseeventfWheel, 0u, 0u, unchecked((uint)wheelDelta), UIntPtr.Zero);
+		return new ClickResult(Performed: true, $"真实滚轮：{wheelDelta} @ {screenX},{screenY}");
+	}
+
 	public async Task<ClickResult> PressKeyAsync(string key, nint windowHandle, CancellationToken cancellationToken = default(CancellationToken))
 	{
-		if (!string.Equals(key, "esc", StringComparison.OrdinalIgnoreCase) && !string.Equals(key, "escape", StringComparison.OrdinalIgnoreCase))
+		byte virtualKey;
+		string displayName;
+		if (string.Equals(key, "esc", StringComparison.OrdinalIgnoreCase) || string.Equals(key, "escape", StringComparison.OrdinalIgnoreCase))
 		{
-			throw new InvalidOperationException("当前阶段只允许发送 Esc，不支持按键：" + key);
+			virtualKey = VkEscape;
+			displayName = "Esc";
+		}
+		else if (string.Equals(key, "v", StringComparison.OrdinalIgnoreCase))
+		{
+			virtualKey = VkV;
+			displayName = "V";
+		}
+		else
+		{
+			throw new InvalidOperationException("当前只支持按键 Esc 和 V，不支持：" + key);
 		}
 		cancellationToken.ThrowIfCancellationRequested();
 		TryActivateWindow(windowHandle);
 		await Task.Delay(120, cancellationToken);
-		keybd_event(27, 0, 0u, UIntPtr.Zero);
+		keybd_event(virtualKey, 0, 0u, UIntPtr.Zero);
 		await Task.Delay(50, cancellationToken);
-		keybd_event(27, 0, 2u, UIntPtr.Zero);
-		return new ClickResult(Performed: true, "真实按键：Esc");
+		keybd_event(virtualKey, 0, KeyeventfKeyup, UIntPtr.Zero);
+		return new ClickResult(Performed: true, "真实按键：" + displayName);
+	}
+
+	public async Task<ClickResult> PressAltEnterAsync(nint windowHandle, CancellationToken cancellationToken = default(CancellationToken))
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		TryActivateWindow(windowHandle);
+		await Task.Delay(120, cancellationToken);
+		bool enterIsDown = false;
+		keybd_event(VkMenu, 0, 0u, UIntPtr.Zero);
+		try
+		{
+			await Task.Delay(200, cancellationToken);
+			keybd_event(VkReturn, 0, 0u, UIntPtr.Zero);
+			enterIsDown = true;
+			await Task.Delay(50, cancellationToken);
+			keybd_event(VkReturn, 0, KeyeventfKeyup, UIntPtr.Zero);
+			enterIsDown = false;
+		}
+		finally
+		{
+			if (enterIsDown)
+			{
+				keybd_event(VkReturn, 0, KeyeventfKeyup, UIntPtr.Zero);
+			}
+			keybd_event(VkMenu, 0, KeyeventfKeyup, UIntPtr.Zero);
+		}
+		return new ClickResult(Performed: true, "真实组合键：Alt（提前 0.2 秒）+ Enter");
 	}
 
 	private static void TryActivateWindow(nint windowHandle)

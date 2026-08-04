@@ -7,8 +7,8 @@ public sealed class ScanEvaluator
 	public BasicScanEvaluation Evaluate(AutomationConfig config, string ocrText)
 	{
 		config.Normalize();
-		MatchResult targetMatch = (config.DebuffEnabled ? TextMatcher.MatchTargets(config.TargetWords, ocrText, config.FuzzyScore) : new MatchResult(Array.Empty<string>(), Array.Empty<string>()));
-		MatchResult blockedMatch = (config.BlockedEnabled ? TextMatcher.MatchTargets(config.BlockedWords, ocrText, config.FuzzyScore) : new MatchResult(Array.Empty<string>(), Array.Empty<string>()));
+		MatchResult targetMatch = (config.DebuffEnabled ? TextMatcher.MatchDebuffTargets(config.TargetWords, ocrText, config.FuzzyScore) : new MatchResult(Array.Empty<string>(), Array.Empty<string>()));
+		MatchResult blockedMatch = (config.BlockedEnabled ? TextMatcher.MatchDebuffTargets(config.BlockedWords, ocrText, config.BlockedFuzzyScore) : new MatchResult(Array.Empty<string>(), Array.Empty<string>()));
 		MatchResult investmentMatch = (config.InvestmentEnabled ? TextMatcher.MatchTargets(config.InvestmentTargets, ocrText, config.InvestmentFuzzyScore) : new MatchResult(Array.Empty<string>(), Array.Empty<string>()));
 		bool blockedHit = config.BlockedEnabled && blockedMatch.HitWords.Count > 0;
 		bool targetSatisfied = IsTargetSatisfied(config, targetMatch);
@@ -20,7 +20,7 @@ public sealed class ScanEvaluator
 
 	private static bool IsTargetSatisfied(AutomationConfig config, MatchResult targetMatch)
 	{
-		if (!config.DebuffEnabled)
+		if (!config.DebuffEnabled || config.TargetWords.Count == 0)
 		{
 			return false;
 		}
@@ -36,6 +36,10 @@ public sealed class ScanEvaluator
 		if (!config.DebuffEnabled)
 		{
 			return "继续刷新：主词条检测未开启。";
+		}
+		if (config.TargetWords.Count == 0)
+		{
+			return "继续后续流程：主词条目标为空，保留词条页识别但不作为停止条件。";
 		}
 		if (blockedHit)
 		{

@@ -55,9 +55,23 @@ public partial class MainWindow : Window, IComponentConnector
 
 	private const int WeeklyPointsGoal = 18000;
 
+	private const int MaxLogLines = 500;
+
+	private static readonly TimeSpan OcrMaintenanceRestartInterval = TimeSpan.FromMinutes(90.0);
+
 	private static readonly RatioPoint WeeklyHomeSafePoint = new RatioPoint(0.94, 0.8);
 
 	private static readonly RatioRegion WeeklyPointsRegion = new RatioRegion(0.018, 0.865, 0.205, 0.085);
+
+	private static readonly RatioRegion GameMenuRightQuarterRegion = new RatioRegion(0.75, 0.0, 0.25, 1.0);
+
+	private static readonly RatioRegion ResolutionListRegion = new RatioRegion(0.0, 0.1, 1.0, 0.55);
+
+	private static readonly string[] GameMenuStableAnchors = new string[13]
+	{
+		"好友", "委托", "合成", "成就", "短信", "无名勋礼", "跃迁", "角色", "指南", "联机玩法",
+		"导航", "教学目录", "游戏工具"
+	};
 
 	private readonly ConfigStore _configStore = new ConfigStore(AppContext.BaseDirectory);
 
@@ -89,6 +103,20 @@ public partial class MainWindow : Window, IComponentConnector
 
 	private bool _automationSuccessStop;
 
+	private bool _outerOpeningRapidAdvanceCompleted;
+
+	private bool _outerBottomReturnRapidSequenceCompleted;
+
+	private string? _combinedSuccessMessage;
+
+	private readonly MediaPlayer _successAudioPlayer = new MediaPlayer();
+
+	private bool _successAudioInitialized;
+
+	private bool _successAudioReady;
+
+	private bool _successAudioPlayPending;
+
 	private HwndSource? _hotkeySource;
 
 	private readonly GameLogOverlayWindow _gameLogOverlay = new GameLogOverlayWindow();
@@ -97,6 +125,8 @@ public partial class MainWindow : Window, IComponentConnector
 	{
 		Interval = TimeSpan.FromMilliseconds(180L)
 	};
+
+	private int _logLineCount;
 
 	public MainWindow()
 	{
@@ -109,6 +139,7 @@ public partial class MainWindow : Window, IComponentConnector
 		AppendLog("第 6 阶段已启用：完整自动刷新闭环，返回货币战争后继续循环。");
 		AppendLog("OCR 状态：" + _ocrService.Name);
 		AppendLog("点击/按键语义对齐旧 Python 稳定版：流程中直接执行输入。");
+		InitializeSuccessAudio();
 		SetStatus("状态：未运行");
 		HighlightNav(HomeNav);
 		_gameLogOverlayTimer.Tick += GameLogOverlayTimer_Tick;
@@ -126,6 +157,25 @@ public partial class MainWindow : Window, IComponentConnector
 	private void MainWindow_Loaded(object sender, RoutedEventArgs e)
 	{
 		RegisterHotkeys();
+		base.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(ShowStartupNotices));
+	}
+
+	private void ShowStartupNotices()
+	{
+		if (!string.Equals(_config.HiddenReleaseNotesVersion, ReleaseNotes.CurrentVersion, StringComparison.Ordinal))
+		{
+			ReleaseNotesWindow releaseNotesWindow = new ReleaseNotesWindow
+			{
+				Owner = this
+			};
+			releaseNotesWindow.ShowDialog();
+			if (releaseNotesWindow.DoNotShowAgain)
+			{
+				_config.HiddenReleaseNotesVersion = ReleaseNotes.CurrentVersion;
+				_configStore.Save(_config);
+				AppendLog("更新提示：本版本不再显示。");
+			}
+		}
 		CheckForUpdatesAsync(showNoUpdateMessage: false);
 	}
 
@@ -135,6 +185,7 @@ public partial class MainWindow : Window, IComponentConnector
 		_gameLogOverlayTimer.Stop();
 		_gameLogOverlay.Close();
 		UnregisterHotkeys();
+		_successAudioPlayer.Close();
 		if (_ocrService is IDisposable disposable)
 		{
 			disposable.Dispose();
@@ -149,6 +200,11 @@ public partial class MainWindow : Window, IComponentConnector
 
 	private void SaveConfig_Click(object sender, RoutedEventArgs e)
 	{
+		if (_automationCts != null)
+		{
+			AppendLog("自动流程运行中，暂不允许修改配置。");
+			return;
+		}
 		ReadUiToConfig();
 		_configStore.Save(_config);
 		LoadConfigToUi();
@@ -249,6 +305,7 @@ public partial class MainWindow : Window, IComponentConnector
 			OutGamePage.Visibility = ((!(pageName == "OutGamePage")) ? Visibility.Collapsed : Visibility.Visible);
 			InGamePage.Visibility = ((!(pageName == "InGamePage")) ? Visibility.Collapsed : Visibility.Visible);
 			AutoBattlePage.Visibility = ((!(pageName == "AutoBattlePage")) ? Visibility.Collapsed : Visibility.Visible);
+			ReservedPage.Visibility = ((!(pageName == "ReservedPage")) ? Visibility.Collapsed : Visibility.Visible);
 			LogPage.Visibility = ((!(pageName == "LogPage")) ? Visibility.Collapsed : Visibility.Visible);
 			HelpPage.Visibility = ((!(pageName == "HelpPage")) ? Visibility.Collapsed : Visibility.Visible);
 			HighlightNav((Button)sender);
@@ -261,6 +318,7 @@ public partial class MainWindow : Window, IComponentConnector
 		OutGamePage.Visibility = Visibility.Collapsed;
 		InGamePage.Visibility = Visibility.Collapsed;
 		AutoBattlePage.Visibility = Visibility.Collapsed;
+		ReservedPage.Visibility = Visibility.Collapsed;
 		LogPage.Visibility = Visibility.Visible;
 		HelpPage.Visibility = Visibility.Collapsed;
 		HighlightNav(LogNav);
@@ -268,7 +326,7 @@ public partial class MainWindow : Window, IComponentConnector
 
 	private void HighlightNav(Button active)
 	{
-		Button[] array = new Button[6] { HomeNav, OutGameNav, InGameNav, AutoBattleNav, LogNav, HelpNav };
+		Button[] array = new Button[7] { HomeNav, OutGameNav, InGameNav, AutoBattleNav, ReservedNav, LogNav, HelpNav };
 		foreach (Button obj in array)
 		{
 			obj.Background = ((obj == active) ? ((Brush)FindResource("NavActiveBrush")) : Brushes.Transparent);
@@ -306,10 +364,209 @@ public partial class MainWindow : Window, IComponentConnector
 		await RunOcrOnLatestPreviewAsync();
 	}
 
-	private async void TestDebuffOcr_Click(object sender, RoutedEventArgs e)
+	private async void OptimizeGameWindow_Click(object sender, RoutedEventArgs e)
 	{
-		CapturePreview(CaptureRegion.BottomHalf);
-		await RunOcrOnLatestPreviewAsync();
+		if (_automationCts != null)
+		{
+			MessageBox.Show(this, "请先停止当前自动流程，再进行游戏窗口优化。", "游戏窗口优化", MessageBoxButton.OK, MessageBoxImage.Information);
+			return;
+		}
+		OptimizeGameWindowButton.IsEnabled = false;
+		try
+		{
+			if (!TryFindWindow() || _gameWindow == null)
+			{
+				return;
+			}
+			WindowClientRect rect = _gameWindow.ClientRect;
+			AppendLog($"游戏窗口优化：检测到客户区 {rect.Width}x{rect.Height}，目标为 1920x1080。");
+			if (rect.Width == 1920 && rect.Height == 1080)
+			{
+				SetStatus("状态：游戏窗口已是 1920x1080");
+				AppendLog("游戏窗口优化：当前分辨率已经符合要求，不执行 Esc。 ");
+				MessageBox.Show(this, "游戏窗口客户区已经是 1920x1080，无需优化。", "游戏窗口优化", MessageBoxButton.OK, MessageBoxImage.Information);
+				return;
+			}
+			SetStatus("状态：正在打开游戏菜单");
+			for (int attempt = 1; attempt <= 5; attempt++)
+			{
+				_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
+				AppendLog($"游戏窗口优化：第 {attempt}/5 次按 Esc，等待 2 秒后识别右侧四分之一区域。");
+				AppendLog((await _clickService.PressKeyAsync("Esc", _gameWindow.Handle, CancellationToken.None)).Message);
+				await DelayWithCancellationAsync(2.0, CancellationToken.None);
+				_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
+				OcrScanResult scan = await CaptureAndOcrAsync(GameMenuRightQuarterRegion, CancellationToken.None);
+				List<string> hits = FindGameMenuAnchors(scan.RawText);
+				AppendLog($"游戏窗口优化：第 {attempt}/5 次菜单检测，稳定文字命中 {hits.Count} 个：{(hits.Count == 0 ? "无" : string.Join("、", hits))}。OCR：{ShortText(scan.RawText)}");
+				if (hits.Count >= 3)
+				{
+					SetStatus("状态：已打开游戏菜单，正在识别设置齿轮");
+					AppendLog("游戏窗口优化：已确认手机菜单出现，开始在右侧四分之一区域识别设置齿轮。");
+					if (!await TryClickGameSettingsGearAsync(CancellationToken.None))
+					{
+						SetStatus("状态：未识别到设置齿轮");
+						MessageBox.Show(this, "手机菜单已经打开，但没有可靠识别到设置齿轮，因此没有点击。\n请查看日志中的齿轮相似度。", "游戏窗口优化", MessageBoxButton.OK, MessageBoxImage.Warning);
+						return;
+					}
+					if (!await TryOpenResolutionListAsync(CancellationToken.None))
+					{
+						SetStatus("状态：未找到分辨率设置");
+						MessageBox.Show(this, "已经点击设置齿轮，但在上半屏没有识别到“分辨率”这一行。", "游戏窗口优化", MessageBoxButton.OK, MessageBoxImage.Warning);
+						return;
+					}
+					if (!await TrySelectWindowed1920x1080Async(CancellationToken.None))
+					{
+						SetStatus("状态：未找到 1920x1080 窗口化选项");
+						MessageBox.Show(this, "分辨率列表已经展开，但逐次向下滚动后仍未识别到不带“全屏幕”的 1920x1080。\n工具已经停止，不会盲目点击其他分辨率。", "游戏窗口优化", MessageBoxButton.OK, MessageBoxImage.Warning);
+						return;
+					}
+					await DelayWithCancellationAsync(3.0, CancellationToken.None);
+					_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
+					WindowClientRect optimizedRect = _gameWindow.ClientRect;
+					WindowInfoText.Text = $"窗口：{_gameWindow.Title}  client={optimizedRect.Width}x{optimizedRect.Height}  left={optimizedRect.Left}, top={optimizedRect.Top}  {_windowCapture.DescribeDisplay(_gameWindow)}";
+					bool optimized = optimizedRect.Width == 1920 && optimizedRect.Height == 1080;
+					SetStatus(optimized ? "状态：游戏窗口优化完成" : "状态：已选择分辨率，等待游戏应用");
+					AppendLog($"游戏窗口优化：选择完成后客户区为 {optimizedRect.Width}x{optimizedRect.Height}。");
+					MessageBox.Show(this, optimized
+						? "已选择 1920x1080 窗口化，游戏客户区检测通过。"
+						: $"已经点击 1920x1080 窗口化选项，但当前客户区仍为 {optimizedRect.Width}x{optimizedRect.Height}。请检查游戏是否弹出了额外确认。", "游戏窗口优化", MessageBoxButton.OK, optimized ? MessageBoxImage.Information : MessageBoxImage.Warning);
+					return;
+				}
+			}
+			SetStatus("状态：未识别到游戏菜单");
+			AppendLog("游戏窗口优化：连续按 Esc 5 次后仍未确认手机菜单，已停止，不会继续操作。");
+			MessageBox.Show(this, "已尝试按 Esc 5 次，但右侧区域仍未识别到足够的菜单文字。\n请确认游戏没有最小化，并查看运行日志中的 OCR 原文。", "游戏窗口优化", MessageBoxButton.OK, MessageBoxImage.Warning);
+		}
+		catch (Exception ex)
+		{
+			SetStatus("状态：游戏窗口优化失败");
+			AppendLog("游戏窗口优化失败：" + ex.Message);
+			MessageBox.Show(this, ex.Message, "游戏窗口优化失败", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+		}
+		finally
+		{
+			OptimizeGameWindowButton.IsEnabled = true;
+		}
+	}
+
+	private static List<string> FindGameMenuAnchors(string ocrText)
+	{
+		string normalized = TextMatcher.Normalize(ocrText);
+		return GameMenuStableAnchors
+			.Where(anchor => normalized.Contains(TextMatcher.Normalize(anchor), StringComparison.Ordinal))
+			.Distinct(StringComparer.Ordinal)
+			.ToList();
+	}
+
+	private async Task<bool> TryClickGameSettingsGearAsync(CancellationToken cancellationToken)
+	{
+		if (_gameWindow == null)
+		{
+			return false;
+		}
+		CaptureRegion region = new CaptureRegion("游戏菜单右侧四分之一区域", GameMenuRightQuarterRegion.X, GameMenuRightQuarterRegion.Y, GameMenuRightQuarterRegion.Width, GameMenuRightQuarterRegion.Height);
+		WindowClientRect resolved = _windowCapture.ResolveRegion(_gameWindow.ClientRect, region);
+		BitmapSource screenshot = _windowCapture.Capture(_gameWindow, region);
+		GameSettingsGearDetectionResult detection = GameSettingsGearDetector.Detect(screenshot);
+		AppendLog($"游戏窗口优化：设置齿轮识图最高相似度 {detection.Similarity:0.000}，阈值 0.650。");
+		if (!detection.Found)
+		{
+			return false;
+		}
+		int screenX = resolved.Left + (int)Math.Round(detection.CenterX * resolved.Width / (double)screenshot.PixelWidth);
+		int screenY = resolved.Top + (int)Math.Round(detection.CenterY * resolved.Height / (double)screenshot.PixelHeight);
+		AppendLog((await _clickService.ClickAsync(new ClickRequest("游戏窗口优化：识图点击设置齿轮", screenX, screenY), _gameWindow.Handle, cancellationToken)).Message);
+		await DelayWithCancellationAsync(1.8, cancellationToken);
+		return true;
+	}
+
+	private async Task<bool> TryOpenResolutionListAsync(CancellationToken cancellationToken)
+	{
+		for (int attempt = 1; attempt <= 5; attempt++)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
+			OcrScanResult scan = await CaptureAndOcrAsync(ResolutionListRegion, cancellationToken);
+			OcrClickCandidate? candidate = OcrClickResolver.FindBest(scan, new string[1] { "分辨率" }, 86);
+			AppendLog($"游戏窗口优化：设置页第 {attempt}/5 次上半屏检测：{(candidate == null ? "未找到分辨率" : "找到 " + candidate.Item.Text)}。OCR：{ShortText(scan.RawText)}");
+			if (candidate != null && _latestCaptureScreenRegion != null)
+			{
+				Rect bounds = candidate.Item.Bounds;
+				int screenX = _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0);
+				int screenY = _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0);
+				AppendLog((await _clickService.ClickAsync(new ClickRequest("游戏窗口优化：展开分辨率列表", screenX, screenY), _gameWindow.Handle, cancellationToken)).Message);
+				await DelayWithCancellationAsync(1.5, cancellationToken);
+				return true;
+			}
+			await DelayWithCancellationAsync(1.0, cancellationToken);
+		}
+		return false;
+	}
+
+	private async Task<bool> TrySelectWindowed1920x1080Async(CancellationToken cancellationToken)
+	{
+		const int maximumScrollCount = 20;
+		for (int scanIndex = 0; scanIndex <= maximumScrollCount; scanIndex++)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
+			OcrScanResult scan = await CaptureAndOcrAsync(ResolutionListRegion, cancellationToken);
+			OcrTextItem? windowedTarget = scan.Items.FirstOrDefault(IsWindowed1920x1080Item);
+			OcrTextItem? fullscreenTarget = scan.Items.FirstOrDefault(IsFullscreen1920x1080Item);
+			OcrTextItem? target = windowedTarget ?? fullscreenTarget;
+			bool convertFromFullscreen = windowedTarget == null && fullscreenTarget != null;
+			AppendLog($"游戏窗口优化：分辨率列表第 {scanIndex + 1} 次中上半屏检测：{(target == null ? "未找到 1920x1080" : "找到 " + target.Text + (convertFromFullscreen ? "，选择后将用 Alt+Enter 转为窗口化" : ""))}。OCR：{ShortText(scan.RawText)}");
+			if (target != null && _latestCaptureScreenRegion != null)
+			{
+				Rect bounds = target.Bounds;
+				int screenX = _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0);
+				int screenY = _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0);
+				string clickReason = convertFromFullscreen ? "游戏窗口优化：选择 1920x1080 全屏幕" : "游戏窗口优化：选择 1920x1080 窗口化";
+				AppendLog((await _clickService.ClickAsync(new ClickRequest(clickReason, screenX, screenY), _gameWindow.Handle, cancellationToken)).Message);
+				if (convertFromFullscreen)
+				{
+					await DelayWithCancellationAsync(1.0, cancellationToken);
+					AppendLog((await _clickService.PressAltEnterAsync(_gameWindow.Handle, cancellationToken)).Message);
+				}
+				return true;
+			}
+			if (scanIndex == maximumScrollCount)
+			{
+				break;
+			}
+			WindowClientRect rect = _gameWindow.ClientRect;
+			int scrollX = rect.Left + (int)Math.Round(rect.Width * 0.84);
+			int scrollY = rect.Top + (int)Math.Round(rect.Height * 0.43);
+			AppendLog($"游戏窗口优化：未找到目标，执行第 {scanIndex + 1}/{maximumScrollCount} 次向下滚动，随后停下重新检测。");
+			AppendLog((await _clickService.ScrollAsync(scrollX, scrollY, -600, _gameWindow.Handle, cancellationToken)).Message);
+			await DelayWithCancellationAsync(1.5, cancellationToken);
+		}
+		return false;
+	}
+
+	private static bool IsWindowed1920x1080Item(OcrTextItem item)
+	{
+		string normalized = Regex.Replace(item.Text.ToUpperInvariant().Replace('×', 'X'), "\\s+", "");
+		if (normalized.Contains("全屏", StringComparison.Ordinal))
+		{
+			return false;
+		}
+		return IsExact1920x1080Text(normalized);
+	}
+
+	private static bool IsFullscreen1920x1080Item(OcrTextItem item)
+	{
+		string normalized = Regex.Replace(item.Text.ToUpperInvariant().Replace('×', 'X'), "\\s+", "");
+		return normalized.Contains("全屏", StringComparison.Ordinal) && IsExact1920x1080Text(normalized);
+	}
+
+	private static bool IsExact1920x1080Text(string normalized)
+	{
+		MatchCollection numbers = Regex.Matches(normalized, "\\d+");
+		return numbers.Count == 2
+			&& numbers[0].Value == "1920"
+			&& numbers[1].Value == "1080"
+			&& Regex.IsMatch(normalized, "1920[X*]1080", RegexOptions.CultureInvariant);
 	}
 
 	private async void TestFullWindowOcr_Click(object sender, RoutedEventArgs e)
@@ -363,15 +620,29 @@ public partial class MainWindow : Window, IComponentConnector
 		ShowLogPage();
 		List<string> strategies = InGameStrategyListBox.Items.OfType<string>().ToList();
 		List<string> investments = InGameInvestmentListBox.Items.OfType<string>().ToList();
-		if (strategies.Count == 0 || investments.Count == 0)
+		if (strategies.Count == 0)
 		{
-			MessageBox.Show(this, "请至少添加 1 个局内投资目标和 1 个局内策略目标。", "局内自定义", MessageBoxButton.OK, MessageBoxImage.Asterisk);
+			MessageBox.Show(this, "请至少添加 1 个局内策略目标。局内投资目标可以留空，留空时会自动选择安全投资并直接进入局内。", "局内自定义", MessageBoxButton.OK, MessageBoxImage.Asterisk);
 			return;
 		}
 		ReadUiToConfig();
 		_configStore.Save(_config);
 		RefreshWordHistoryControls();
 		await StartIndependentStrategyPresetAsync(string.Join("、", strategies), strategies, investments);
+	}
+
+	private async void StartCombined_Click(object sender, RoutedEventArgs e)
+	{
+		CombinedOuterInvestmentRule outerInvestmentRule = GetComboRule(CombinedOuterInvestmentRuleBox, CombinedOuterInvestmentRule.StopOnMatch);
+		if ((outerInvestmentRule == CombinedOuterInvestmentRule.RequireThenContinue || outerInvestmentRule == CombinedOuterInvestmentRule.StopOnMatch) && CombinedOuterInvestmentListBox.Items.Count == 0)
+		{
+			MessageBox.Show(this, "当前局外投资规则需要识别目标，请至少添加 1 个局外投资词条，或者选择“忽略局外投资”。", "局外+局内", MessageBoxButton.OK, MessageBoxImage.Asterisk);
+			return;
+		}
+		ReadUiToConfig();
+		_configStore.Save(_config);
+		ShowLogPage();
+		await StartCombinedModeAsync();
 	}
 
 	private async void StartWeeklyPoints_Click(object sender, RoutedEventArgs e)
@@ -408,6 +679,51 @@ public partial class MainWindow : Window, IComponentConnector
 		if (e.Key == Key.Return)
 		{
 			AddInvestmentWord_Click(sender, e);
+			e.Handled = true;
+		}
+	}
+
+	private void CombinedTargetInputBox_KeyDown(object sender, KeyEventArgs e)
+	{
+		if (e.Key == Key.Return)
+		{
+			AddCombinedTarget_Click(sender, e);
+			e.Handled = true;
+		}
+	}
+
+	private void CombinedBlockedInputBox_KeyDown(object sender, KeyEventArgs e)
+	{
+		if (e.Key == Key.Return)
+		{
+			AddCombinedBlocked_Click(sender, e);
+			e.Handled = true;
+		}
+	}
+
+	private void CombinedOuterInvestmentInputBox_KeyDown(object sender, KeyEventArgs e)
+	{
+		if (e.Key == Key.Return)
+		{
+			AddCombinedOuterInvestment_Click(sender, e);
+			e.Handled = true;
+		}
+	}
+
+	private void CombinedInvestmentInputBox_KeyDown(object sender, KeyEventArgs e)
+	{
+		if (e.Key == Key.Return)
+		{
+			AddCombinedInvestment_Click(sender, e);
+			e.Handled = true;
+		}
+	}
+
+	private void CombinedStrategyInputBox_KeyDown(object sender, KeyEventArgs e)
+	{
+		if (e.Key == Key.Return)
+		{
+			AddCombinedStrategy_Click(sender, e);
 			e.Handled = true;
 		}
 	}
@@ -457,6 +773,16 @@ public partial class MainWindow : Window, IComponentConnector
 		ClearWords(InvestmentWordsListBox, "投资词条");
 	}
 
+	private void MoveInvestmentWordUp_Click(object sender, RoutedEventArgs e)
+	{
+		MoveSelectedWord(InvestmentWordsListBox, -1, "投资词条");
+	}
+
+	private void MoveInvestmentWordDown_Click(object sender, RoutedEventArgs e)
+	{
+		MoveSelectedWord(InvestmentWordsListBox, 1, "投资词条");
+	}
+
 	private void AddInGameInvestment_Click(object sender, RoutedEventArgs e)
 	{
 		AddWord(InGameInvestmentInputBox, InGameInvestmentListBox, 20, "局内投资");
@@ -472,6 +798,16 @@ public partial class MainWindow : Window, IComponentConnector
 		ClearWords(InGameInvestmentListBox, "局内投资");
 	}
 
+	private void MoveInGameInvestmentUp_Click(object sender, RoutedEventArgs e)
+	{
+		MoveSelectedWord(InGameInvestmentListBox, -1, "局内投资");
+	}
+
+	private void MoveInGameInvestmentDown_Click(object sender, RoutedEventArgs e)
+	{
+		MoveSelectedWord(InGameInvestmentListBox, 1, "局内投资");
+	}
+
 	private void AddInGameStrategy_Click(object sender, RoutedEventArgs e)
 	{
 		AddWord(InGameStrategyInputBox, InGameStrategyListBox, 20, "局内策略");
@@ -485,6 +821,135 @@ public partial class MainWindow : Window, IComponentConnector
 	private void ClearInGameStrategy_Click(object sender, RoutedEventArgs e)
 	{
 		ClearWords(InGameStrategyListBox, "局内策略");
+	}
+
+	private void MoveInGameStrategyUp_Click(object sender, RoutedEventArgs e)
+	{
+		MoveSelectedWord(InGameStrategyListBox, -1, "局内策略");
+	}
+
+	private void MoveInGameStrategyDown_Click(object sender, RoutedEventArgs e)
+	{
+		MoveSelectedWord(InGameStrategyListBox, 1, "局内策略");
+	}
+
+	private void AddCombinedTarget_Click(object sender, RoutedEventArgs e)
+	{
+		AddWord(CombinedTargetInputBox, CombinedTargetListBox, CombinedDebuffMatchAnyBox.IsChecked == true ? 20 : 4, "组合主词条");
+	}
+
+	private void DeleteCombinedTarget_Click(object sender, RoutedEventArgs e)
+	{
+		DeleteSelectedWords(CombinedTargetListBox, "组合主词条");
+	}
+
+	private void ClearCombinedTarget_Click(object sender, RoutedEventArgs e)
+	{
+		ClearWords(CombinedTargetListBox, "组合主词条");
+	}
+
+	private void AddCombinedBlocked_Click(object sender, RoutedEventArgs e)
+	{
+		AddWord(CombinedBlockedInputBox, CombinedBlockedListBox, 20, "组合不想要词条");
+	}
+
+	private void DeleteCombinedBlocked_Click(object sender, RoutedEventArgs e)
+	{
+		DeleteSelectedWords(CombinedBlockedListBox, "组合不想要词条");
+	}
+
+	private void ClearCombinedBlocked_Click(object sender, RoutedEventArgs e)
+	{
+		ClearWords(CombinedBlockedListBox, "组合不想要词条");
+	}
+
+	private void AddCombinedOuterInvestment_Click(object sender, RoutedEventArgs e)
+	{
+		AddWord(CombinedOuterInvestmentInputBox, CombinedOuterInvestmentListBox, 20, "组合局外投资");
+	}
+
+	private void DeleteCombinedOuterInvestment_Click(object sender, RoutedEventArgs e)
+	{
+		DeleteSelectedWords(CombinedOuterInvestmentListBox, "组合局外投资");
+	}
+
+	private void ClearCombinedOuterInvestment_Click(object sender, RoutedEventArgs e)
+	{
+		ClearWords(CombinedOuterInvestmentListBox, "组合局外投资");
+	}
+
+	private void MoveCombinedOuterInvestmentUp_Click(object sender, RoutedEventArgs e)
+	{
+		MoveSelectedWord(CombinedOuterInvestmentListBox, -1, "组合局外投资");
+	}
+
+	private void MoveCombinedOuterInvestmentDown_Click(object sender, RoutedEventArgs e)
+	{
+		MoveSelectedWord(CombinedOuterInvestmentListBox, 1, "组合局外投资");
+	}
+
+	private void AddCombinedInvestment_Click(object sender, RoutedEventArgs e)
+	{
+		AddWord(CombinedInvestmentInputBox, CombinedInvestmentListBox, 20, "组合局内投资");
+	}
+
+	private void DeleteCombinedInvestment_Click(object sender, RoutedEventArgs e)
+	{
+		DeleteSelectedWords(CombinedInvestmentListBox, "组合局内投资");
+	}
+
+	private void ClearCombinedInvestment_Click(object sender, RoutedEventArgs e)
+	{
+		ClearWords(CombinedInvestmentListBox, "组合局内投资");
+	}
+
+	private void AddCombinedStrategy_Click(object sender, RoutedEventArgs e)
+	{
+		AddWord(CombinedStrategyInputBox, CombinedStrategyListBox, 20, "组合局内策略");
+	}
+
+	private void DeleteCombinedStrategy_Click(object sender, RoutedEventArgs e)
+	{
+		DeleteSelectedWords(CombinedStrategyListBox, "组合局内策略");
+	}
+
+	private void ClearCombinedStrategy_Click(object sender, RoutedEventArgs e)
+	{
+		ClearWords(CombinedStrategyListBox, "组合局内策略");
+	}
+
+	private void MoveCombinedStrategyUp_Click(object sender, RoutedEventArgs e)
+	{
+		MoveSelectedWord(CombinedStrategyListBox, -1, "组合局内策略");
+	}
+
+	private void MoveCombinedStrategyDown_Click(object sender, RoutedEventArgs e)
+	{
+		MoveSelectedWord(CombinedStrategyListBox, 1, "组合局内策略");
+	}
+
+	private void CombinedConfig_Changed(object sender, RoutedEventArgs e)
+	{
+		if (base.IsLoaded)
+		{
+			SaveConfigFromUi("局外+局内配置已更新。");
+		}
+	}
+
+	private void CombinedFlowRule_Changed(object sender, SelectionChangedEventArgs e)
+	{
+		if (base.IsLoaded)
+		{
+			SaveConfigFromUi("局外+局内流程条件已更新。");
+		}
+	}
+
+	private void SaveCombinedConfig_Click(object sender, RoutedEventArgs e)
+	{
+		ReadUiToConfig();
+		_configStore.Save(_config);
+		LoadConfigToUi();
+		AppendLog("局外+局内配置已保存。");
 	}
 
 	private void DebuffMatchAny_Changed(object sender, RoutedEventArgs e)
@@ -517,6 +982,19 @@ public partial class MainWindow : Window, IComponentConnector
 		SetListBoxItems(InvestmentWordsListBox, _config.InvestmentTargets);
 		SetListBoxItems(InGameStrategyListBox, _config.InGameStrategyTargets);
 		SetListBoxItems(InGameInvestmentListBox, _config.InGameInvestmentTargets);
+		CombinedDebuffEnabledBox.IsChecked = _config.CombinedDebuffEnabled;
+		CombinedDebuffMatchAnyBox.IsChecked = _config.CombinedDebuffMatchAny;
+		SetListBoxItems(CombinedTargetListBox, _config.CombinedTargetWords);
+		CombinedBlockedEnabledBox.IsChecked = _config.CombinedBlockedEnabled;
+		CombinedCheckInvestmentWhenBlockedBox.IsChecked = _config.CombinedCheckInvestmentWhenBlocked;
+		SelectComboRule(CombinedMainRuleBox, _config.CombinedMainRule);
+		SelectComboRule(CombinedBlockedRuleBox, _config.CombinedBlockedRule);
+		SelectComboRule(CombinedOuterInvestmentRuleBox, _config.CombinedOuterInvestmentRule);
+		SelectComboRule(CombinedInGameInvestmentRuleBox, _config.CombinedInGameInvestmentRule);
+		SetListBoxItems(CombinedBlockedListBox, _config.CombinedBlockedWords);
+		SetListBoxItems(CombinedOuterInvestmentListBox, _config.CombinedInvestmentTargets);
+		SetListBoxItems(CombinedStrategyListBox, _config.CombinedInGameStrategyTargets);
+		SetListBoxItems(CombinedInvestmentListBox, _config.CombinedInvestmentTargets);
 		RefreshWordHistoryControls();
 		UpdateWordCounts();
 		ApplyEvaluationSummary(null);
@@ -535,6 +1013,25 @@ public partial class MainWindow : Window, IComponentConnector
 		_config.CheckInvestmentWhenBlocked = CheckInvestmentWhenBlockedBox.IsChecked == true;
 		_config.InGameStrategyTargets = ReadWords(InGameStrategyListBox);
 		_config.InGameInvestmentTargets = ReadWords(InGameInvestmentListBox);
+		_config.CombinedMainRule = GetComboRule(CombinedMainRuleBox, CombinedMainRule.StopOnMatch);
+		_config.CombinedBlockedRule = GetComboRule(CombinedBlockedRuleBox, CombinedBlockedRule.RestartOnMatch);
+		_config.CombinedOuterInvestmentRule = GetComboRule(CombinedOuterInvestmentRuleBox, CombinedOuterInvestmentRule.StopOnMatch);
+		_config.CombinedInGameInvestmentRule = _config.CombinedOuterInvestmentRule switch
+		{
+			CombinedOuterInvestmentRule.Ignore => CombinedInGameInvestmentRule.Ignore,
+			CombinedOuterInvestmentRule.RequireThenContinue => CombinedInGameInvestmentRule.RequireThenContinue,
+			_ => CombinedInGameInvestmentRule.OptionalContinue
+		};
+		_config.CombinedFlowRulesConfigured = true;
+		_config.CombinedDebuffEnabled = _config.CombinedMainRule != CombinedMainRule.Ignore;
+		_config.CombinedDebuffMatchAny = CombinedDebuffMatchAnyBox.IsChecked == true;
+		_config.CombinedTargetWords = ReadWords(CombinedTargetListBox);
+		_config.CombinedBlockedEnabled = _config.CombinedBlockedRule != CombinedBlockedRule.Ignore;
+		_config.CombinedCheckInvestmentWhenBlocked = _config.CombinedBlockedRule == CombinedBlockedRule.ContinueOnMatch;
+		_config.CombinedBlockedWords = ReadWords(CombinedBlockedListBox);
+		_config.CombinedInvestmentTargets = ReadWords(CombinedOuterInvestmentListBox);
+		_config.CombinedInGameStrategyTargets = ReadWords(CombinedStrategyListBox);
+		_config.CombinedInGameInvestmentTargets = _config.CombinedInvestmentTargets.ToList();
 		_config.InGameStrategyTarget = "";
 		_config.InGameInvestmentTarget = "";
 		_config.Normalize();
@@ -544,6 +1041,11 @@ public partial class MainWindow : Window, IComponentConnector
 		SetListBoxItems(InvestmentWordsListBox, _config.InvestmentTargets);
 		SetListBoxItems(InGameStrategyListBox, _config.InGameStrategyTargets);
 		SetListBoxItems(InGameInvestmentListBox, _config.InGameInvestmentTargets);
+		SetListBoxItems(CombinedTargetListBox, _config.CombinedTargetWords);
+		SetListBoxItems(CombinedBlockedListBox, _config.CombinedBlockedWords);
+		SetListBoxItems(CombinedOuterInvestmentListBox, _config.CombinedInvestmentTargets);
+		SetListBoxItems(CombinedStrategyListBox, _config.CombinedInGameStrategyTargets);
+		SetListBoxItems(CombinedInvestmentListBox, _config.CombinedInGameInvestmentTargets);
 		RefreshWordHistoryControls();
 	}
 
@@ -586,6 +1088,51 @@ public partial class MainWindow : Window, IComponentConnector
 		comboBox.Text = currentText;
 	}
 
+	private static T GetComboRule<T>(ComboBox comboBox, T fallback) where T : struct, Enum
+	{
+		if (comboBox.SelectedItem is ComboBoxItem item && item.Tag is string value && Enum.TryParse(value, out T parsed))
+		{
+			return parsed;
+		}
+		return fallback;
+	}
+
+	private static void SelectComboRule<T>(ComboBox comboBox, T value) where T : struct, Enum
+	{
+		string expected = value.ToString();
+		foreach (ComboBoxItem item in comboBox.Items.OfType<ComboBoxItem>())
+		{
+			if (string.Equals(item.Tag as string, expected, StringComparison.Ordinal))
+			{
+				comboBox.SelectedItem = item;
+				return;
+			}
+		}
+		comboBox.SelectedIndex = 0;
+	}
+
+	private static string GetCombinedRuleText(Enum rule)
+	{
+		return rule switch
+		{
+			CombinedMainRule.Ignore => "忽略",
+			CombinedMainRule.RequireThenContinue => "必须命中后继续",
+			CombinedMainRule.StopOnMatch => "命中立即停止",
+			CombinedMainRule.OptionalContinue => "尝试即可",
+			CombinedBlockedRule.Ignore => "忽略",
+			CombinedBlockedRule.RestartOnMatch => "命中就重开",
+			CombinedBlockedRule.ContinueOnMatch => "命中仍继续",
+			CombinedOuterInvestmentRule.Ignore => "忽略",
+			CombinedOuterInvestmentRule.RequireThenContinue => "必须命中后继续",
+			CombinedOuterInvestmentRule.OptionalContinue => "尝试即可",
+			CombinedOuterInvestmentRule.StopOnMatch => "命中立即停止",
+			CombinedInGameInvestmentRule.Ignore => "忽略",
+			CombinedInGameInvestmentRule.RequireThenContinue => "必须命中后继续",
+			CombinedInGameInvestmentRule.OptionalContinue => "尝试即可",
+			_ => rule.ToString()
+		};
+	}
+
 	private void RefreshWordHistoryControls()
 	{
 		SetComboBoxItems(TargetWordInputBox, _config.TargetWordHistory);
@@ -593,6 +1140,11 @@ public partial class MainWindow : Window, IComponentConnector
 		SetComboBoxItems(InvestmentWordInputBox, _config.InvestmentWordHistory);
 		SetComboBoxItems(InGameStrategyInputBox, _config.InGameStrategyHistory);
 		SetComboBoxItems(InGameInvestmentInputBox, _config.InGameInvestmentHistory);
+		SetComboBoxItems(CombinedTargetInputBox, _config.CombinedTargetWordHistory);
+		SetComboBoxItems(CombinedBlockedInputBox, _config.CombinedBlockedWordHistory);
+		SetComboBoxItems(CombinedOuterInvestmentInputBox, _config.CombinedInvestmentWordHistory);
+		SetComboBoxItems(CombinedStrategyInputBox, _config.CombinedInGameStrategyHistory);
+		SetComboBoxItems(CombinedInvestmentInputBox, _config.CombinedInGameInvestmentHistory);
 	}
 
 	private int GetTargetWordLimit()
@@ -650,6 +1202,26 @@ public partial class MainWindow : Window, IComponentConnector
 		}
 	}
 
+	private void MoveSelectedWord(ListBox listBox, int direction, string label)
+	{
+		int selectedIndex = listBox.SelectedIndex;
+		if (selectedIndex < 0)
+		{
+			return;
+		}
+		int targetIndex = selectedIndex + direction;
+		if (targetIndex < 0 || targetIndex >= listBox.Items.Count)
+		{
+			return;
+		}
+		string selectedWord = (string)listBox.Items[selectedIndex];
+		listBox.Items.RemoveAt(selectedIndex);
+		listBox.Items.Insert(targetIndex, selectedWord);
+		SaveConfigFromUi($"{label}优先级已调整：{selectedWord}");
+		listBox.SelectedItem = selectedWord;
+		listBox.ScrollIntoView(selectedWord);
+	}
+
 	private void SaveConfigFromUi(string message)
 	{
 		ReadUiToConfig();
@@ -679,9 +1251,10 @@ public partial class MainWindow : Window, IComponentConnector
 			_configStore.Save(_config);
 			_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
 			WindowClientRect rect = _gameWindow.ClientRect;
-			WindowInfoText.Text = $"窗口：{_gameWindow.Title}  client={rect.Width}x{rect.Height}  left={rect.Left}, top={rect.Top}";
+			string display = _windowCapture.DescribeDisplay(_gameWindow);
+			WindowInfoText.Text = $"窗口：{_gameWindow.Title}  client={rect.Width}x{rect.Height}  left={rect.Left}, top={rect.Top}  {display}";
 			SetStatus("状态：已找到窗口");
-			AppendLog($"找到窗口：{_gameWindow.Title}，client={rect.Width}x{rect.Height}，left={rect.Left}, top={rect.Top}");
+			AppendLog($"找到窗口：{_gameWindow.Title}，client={rect.Width}x{rect.Height}，left={rect.Left}, top={rect.Top}；{display}");
 			return true;
 		}
 		catch (Exception ex)
@@ -701,8 +1274,9 @@ public partial class MainWindow : Window, IComponentConnector
 		{
 			_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
 			WindowClientRect rect = _gameWindow.ClientRect;
-			WindowInfoText.Text = $"窗口：{_gameWindow.Title}  client={rect.Width}x{rect.Height}  left={rect.Left}, top={rect.Top}";
-			AppendLog($"独立局内预设：已刷新窗口位置，client={rect.Width}x{rect.Height}，left={rect.Left}, top={rect.Top}。");
+			string display = _windowCapture.DescribeDisplay(_gameWindow);
+			WindowInfoText.Text = $"窗口：{_gameWindow.Title}  client={rect.Width}x{rect.Height}  left={rect.Left}, top={rect.Top}  {display}";
+			AppendLog($"独立局内预设：已刷新窗口位置，client={rect.Width}x{rect.Height}，left={rect.Left}, top={rect.Top}；{display}。");
 			await DelayWithCancellationAsync(0.3, cancellationToken);
 		}
 		catch (Exception ex)
@@ -715,7 +1289,7 @@ public partial class MainWindow : Window, IComponentConnector
 	{
 		_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
 		WindowClientRect rect = _gameWindow.ClientRect;
-		WindowInfoText.Text = $"窗口：{_gameWindow.Title}  client={rect.Width}x{rect.Height}  left={rect.Left}, top={rect.Top}";
+		WindowInfoText.Text = $"窗口：{_gameWindow.Title}  client={rect.Width}x{rect.Height}  left={rect.Left}, top={rect.Top}  {_windowCapture.DescribeDisplay(_gameWindow)}";
 	}
 
 	private void CapturePreview(CaptureRegion region)
@@ -732,9 +1306,9 @@ public partial class MainWindow : Window, IComponentConnector
 				_latestPreviewRegion = region;
 				PreviewImage.Source = image;
 				PreviewPlaceholder.Visibility = Visibility.Collapsed;
-				CaptureInfoText.Text = $"截图：{region.Name}  {resolved.Width}x{resolved.Height}  left={resolved.Left}, top={resolved.Top}";
+				CaptureInfoText.Text = $"截图：{region.Name}  {resolved.Width}x{resolved.Height}  left={resolved.Left}, top={resolved.Top}  后端={_windowCapture.LastCaptureBackend}";
 				SetStatus("状态：截图完成：" + region.Name);
-				AppendLog($"截图完成：{region.Name}，{resolved.Width}x{resolved.Height}，left={resolved.Left}, top={resolved.Top}");
+				AppendLog($"截图完成：{region.Name}，{resolved.Width}x{resolved.Height}，left={resolved.Left}, top={resolved.Top}，后端={_windowCapture.LastCaptureBackend}");
 			}
 		}
 		catch (Exception ex)
@@ -866,6 +1440,10 @@ public partial class MainWindow : Window, IComponentConnector
 		StartSandGoldPresetButton.IsEnabled = enabled;
 		StartCustomInGameButton.IsEnabled = enabled;
 		StartWeeklyPointsButton.IsEnabled = enabled;
+		StartCombinedButton.IsEnabled = enabled;
+		OutGamePage.IsEnabled = enabled;
+		InGamePage.IsEnabled = enabled;
+		ReservedPage.IsEnabled = enabled;
 		StopAutoButton.IsEnabled = !enabled;
 	}
 
@@ -975,7 +1553,7 @@ public partial class MainWindow : Window, IComponentConnector
 		RefreshGameWindowForIndependentStep();
 		await ClickRatioPointAsync(new RatioPoint(0.565, 0.91), "自动刷周常积分：固定确认", cancellationToken);
 		await DelayWithCancellationAsync(0.2, cancellationToken);
-		await DelayWithCancellationAsync(5.7, cancellationToken);
+		await WaitForOpeningBoardReadyAsync("自动刷周常积分", InGameOpeningFlow.OpeningBoardPostDetectionWaitSeconds, cancellationToken);
 		await DeployOpeningCharactersAsync(cancellationToken);
 		await TryHandleGalaStarChoiceAsync(cancellationToken);
 		await RunOpeningBattlesUntilTwoContinueClicksAsync(cancellationToken);
@@ -985,11 +1563,10 @@ public partial class MainWindow : Window, IComponentConnector
 
 	private async Task RunWeeklyStrategyChoiceAsync(CancellationToken cancellationToken)
 	{
-		await DelayWithCancellationAsync(10.5, cancellationToken);
 		AppendLog("自动刷周常积分：策略页复用局内识别默认黑名单逻辑。");
-		if (!(await IsStrategySelectionScreenAsync(cancellationToken)))
+		if (!(await WaitForMajorPageAsync("自动刷周常积分：策略选择页", InGameOpeningFlow.StrategyScreenAliases, CurrencyWarsFlow.FullWindow, InGameOpeningFlow.StrategyScreenWaitTimeoutSeconds, 0.8, InGameOpeningFlow.StrategyFuzzyScore, cancellationToken)))
 		{
-			AppendLog("自动刷周常积分：当前不是策略选择界面，跳过策略确认。");
+			AppendLog("自动刷周常积分：策略选择页等待超时，跳过策略确认。");
 			return;
 		}
 		await ClickRandomStrategyCardAsync(cancellationToken);
@@ -1016,6 +1593,12 @@ public partial class MainWindow : Window, IComponentConnector
 		try
 		{
 			await RunIndependentStrategyPresetLoopAsync(strategyName, strategyAliases, investmentGateAliases, _automationCts.Token);
+			if (_automationSuccessStop)
+			{
+				AppendLog("独立局内预设：成功停止。");
+				SetStatus("状态：局内策略命中停止");
+				ShowSuccessFeedback("成功刷出目标策略：" + strategyName + "！");
+			}
 		}
 		catch (OperationCanceledException)
 		{
@@ -1023,7 +1606,7 @@ public partial class MainWindow : Window, IComponentConnector
 			SetStatus(_automationSuccessStop ? "状态：局内策略命中停止" : "状态：已停止");
 			if (_automationSuccessStop)
 			{
-				MessageBox.Show(this, "成功刷出目标策略：" + strategyName + "！", "成功", MessageBoxButton.OK, MessageBoxImage.Asterisk);
+				ShowSuccessFeedback("成功刷出目标策略：" + strategyName + "！");
 			}
 		}
 		catch (Exception ex2)
@@ -1040,6 +1623,241 @@ public partial class MainWindow : Window, IComponentConnector
 		}
 	}
 
+	private async Task StartCombinedModeAsync()
+	{
+		if (_automationCts != null)
+		{
+			return;
+		}
+		AutomationConfig storedConfig = _config;
+		AutomationConfig combinedConfig = CreateCombinedRuntimeConfig(storedConfig);
+		if ((object)_gameWindow == null && !TryFindWindow())
+		{
+			return;
+		}
+		_automationCts = new CancellationTokenSource();
+		_automationSuccessStop = false;
+		_combinedSuccessMessage = null;
+		_lastSafeInvestmentPoint = null;
+		_blockedHitThisCycle = false;
+		SetAutomationButtonsEnabled(enabled: false);
+		SetStatus("状态：局外+局内运行中");
+		_config = combinedConfig;
+		bool showSuccessFeedback = false;
+		try
+		{
+			await RunCombinedModeLoopAsync(combinedConfig.InGameStrategyTargets, combinedConfig.InGameInvestmentTargets, _automationCts.Token);
+			showSuccessFeedback = _automationSuccessStop;
+			if (_automationSuccessStop)
+			{
+				AppendLog("局外+局内：成功停止。");
+				SetStatus("状态：局外+局内命中停止");
+			}
+		}
+		catch (OperationCanceledException)
+		{
+			showSuccessFeedback = _automationSuccessStop;
+			AppendLog(_automationSuccessStop ? "局外+局内：成功停止。" : "局外+局内：已手动停止。");
+			SetStatus(_automationSuccessStop ? "状态：局外+局内命中停止" : "状态：已停止");
+		}
+		catch (Exception ex)
+		{
+			AppendLog("局外+局内失败：" + ex.Message);
+			SetStatus("状态：局外+局内失败");
+			MessageBox.Show(this, ex.Message, "局外+局内失败", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+		}
+		finally
+		{
+			_config = storedConfig;
+			_automationCts?.Dispose();
+			_automationCts = null;
+			SetAutomationButtonsEnabled(enabled: true);
+		}
+		if (showSuccessFeedback)
+		{
+			ShowSuccessFeedback(_combinedSuccessMessage ?? "局外+局内目标命中！");
+		}
+	}
+
+	private static AutomationConfig CreateCombinedRuntimeConfig(AutomationConfig source)
+	{
+		AutomationConfig config = new AutomationConfig
+		{
+			WindowTitle = source.WindowTitle,
+			DebuffEnabled = source.CombinedDebuffEnabled,
+			DebuffMatchAny = source.CombinedDebuffMatchAny,
+			TargetWords = source.CombinedTargetWords.ToList(),
+			BlockedEnabled = source.CombinedBlockedEnabled,
+			BlockedWords = source.CombinedBlockedWords.ToList(),
+			InvestmentEnabled = true,
+			InvestmentTargets = source.CombinedInvestmentTargets.ToList(),
+			CheckInvestmentWhenBlocked = source.CombinedCheckInvestmentWhenBlocked,
+			InGameStrategyTargets = source.CombinedInGameStrategyTargets.ToList(),
+			InGameInvestmentTargets = source.CombinedInGameInvestmentTargets.ToList(),
+			CombinedMainRule = source.CombinedMainRule,
+			CombinedBlockedRule = source.CombinedBlockedRule,
+			CombinedOuterInvestmentRule = source.CombinedOuterInvestmentRule,
+			CombinedInGameInvestmentRule = source.CombinedInGameInvestmentRule,
+			CombinedFlowRulesConfigured = true,
+			FuzzyScore = source.FuzzyScore,
+			BlockedFuzzyScore = source.BlockedFuzzyScore,
+			ButtonFuzzyScore = source.ButtonFuzzyScore,
+			InvestmentFuzzyScore = source.InvestmentFuzzyScore,
+			StartDelaySeconds = source.StartDelaySeconds,
+			DebuffCheckDelaySeconds = source.DebuffCheckDelaySeconds,
+			InvestmentIntervalSeconds = source.InvestmentIntervalSeconds
+		};
+		config.Normalize();
+		return config;
+	}
+
+	private async Task RunCombinedModeLoopAsync(IReadOnlyList<string> strategyAliases, IReadOnlyList<string> investmentGateAliases, CancellationToken cancellationToken)
+	{
+		string strategyName = string.Join("、", strategyAliases);
+		bool strategyTargetEmpty = strategyAliases.Count == 0;
+		AppendLog($"局外+局内：启动缓冲 1 秒；流程规则：主词条={GetCombinedRuleText(_config.CombinedMainRule)}，不想要={GetCombinedRuleText(_config.CombinedBlockedRule)}，投资={GetCombinedRuleText(_config.CombinedOuterInvestmentRule)}。");
+		await DelayWithCancellationAsync(1.0, cancellationToken);
+		int round = 1;
+		while (!cancellationToken.IsCancellationRequested)
+		{
+			_blockedHitThisCycle = false;
+			bool investmentTargetEmpty = investmentGateAliases.Count == 0;
+			AppendLog(investmentTargetEmpty
+				? $"局外+局内：第 {round} 轮开始，局内投资目标为空。"
+				: $"局外+局内：第 {round} 轮开始，局内投资目标：{string.Join("、", investmentGateAliases)}。");
+			await RefreshGameWindowForIndependentLoopAsync(cancellationToken);
+			BasicScanEvaluation? evaluation = await RunCombinedOuterFlowBeforeInvestmentAsync(cancellationToken);
+			bool blockedRejectsRound = _config.CombinedBlockedRule == CombinedBlockedRule.RestartOnMatch && evaluation?.BlockedHit == true;
+			bool mainTargetEmpty = _config.TargetWords.Count == 0;
+			bool mainMatched = _config.CombinedMainRule == CombinedMainRule.Ignore || mainTargetEmpty || evaluation?.TargetSatisfied == true;
+			bool roundCanContinue = !blockedRejectsRound && (_config.CombinedMainRule != CombinedMainRule.RequireThenContinue || mainMatched);
+
+			if (_config.CombinedMainRule == CombinedMainRule.StopOnMatch && evaluation?.TargetSatisfied == true && !blockedRejectsRound)
+			{
+				_combinedSuccessMessage = "成功刷出局外主词条：" + string.Join("、", evaluation.TargetMatch.HitWords) + "！";
+				AppendLog("局外+局内：" + evaluation.DecisionReason + " 停止。");
+				StopAutomationForSuccess("状态：组合主词条成功停止");
+				break;
+			}
+			if (blockedRejectsRound)
+			{
+				AppendLog("局外+局内：命中不想要词条，按当前规则结束本轮并重开。");
+			}
+			else if (_config.CombinedMainRule == CombinedMainRule.RequireThenContinue && !mainMatched)
+			{
+				AppendLog("局外+局内：主词条未满足“必须命中”，结束本轮并重开。");
+			}
+			else if (_config.CombinedBlockedRule == CombinedBlockedRule.ContinueOnMatch && evaluation?.BlockedHit == true)
+			{
+				AppendLog("局外+局内：命中不想要词条，但当前规则允许继续后续阶段。");
+			}
+			if (_config.CombinedMainRule == CombinedMainRule.OptionalContinue && !blockedRejectsRound)
+			{
+				if (mainTargetEmpty)
+				{
+					AppendLog("局外+局内：主词条目标为空，按“尝试即可”规则继续后续阶段。");
+				}
+				else if (evaluation?.TargetSatisfied == true)
+				{
+					AppendLog("局外+局内：主词条已命中，但当前规则为“尝试即可”，继续后续阶段。");
+				}
+				else
+				{
+					AppendLog("局外+局内：主词条未命中，按“尝试即可”规则继续后续阶段。");
+				}
+			}
+
+			string? investmentHit = null;
+			if (!roundCanContinue)
+			{
+				AppendLog("局外+局内：前置条件未通过，不进入局内。");
+			}
+			else if (_config.CombinedOuterInvestmentRule == CombinedOuterInvestmentRule.Ignore || investmentTargetEmpty)
+			{
+				AppendLog("局外+局内：忽略投资目标，但仍执行 3 次黑名单保护扫描；选择安全投资后直接进入局内。");
+				await ClickSafeInvestmentAsync(rememberChoice: false, useConfiguredInvestmentTargetsForBlacklist: false, cancellationToken, blacklistScanAttempts: 3);
+			}
+			else
+			{
+				investmentHit = await ExecuteIndependentInvestmentGateAsync(investmentGateAliases, cancellationToken);
+				if (_config.CombinedOuterInvestmentRule == CombinedOuterInvestmentRule.StopOnMatch && !string.IsNullOrWhiteSpace(investmentHit))
+				{
+					_combinedSuccessMessage = "成功刷出投资词条：" + investmentHit + "！";
+					AppendLog("局外+局内：投资词条命中：" + investmentHit + "，停止。");
+					StopAutomationForSuccess("状态：组合投资成功停止");
+					break;
+				}
+				if (_config.CombinedOuterInvestmentRule == CombinedOuterInvestmentRule.RequireThenContinue && string.IsNullOrWhiteSpace(investmentHit))
+				{
+					roundCanContinue = false;
+					AppendLog("局外+局内：投资未满足“必须命中”，本轮不进入局内。");
+				}
+			}
+
+			bool gateHit = roundCanContinue && !strategyTargetEmpty;
+			if (roundCanContinue && strategyTargetEmpty)
+			{
+				AppendLog("局外+局内：局内策略目标为空，本轮不进入局内出战；固定确认后直接退出结算并返回货币战争。");
+			}
+			bool allowExtraStrategyRefresh = IsExtraStrategyRefreshInvestment(investmentHit);
+			await DelayWithCancellationAsync(0.4, cancellationToken);
+			RefreshGameWindowForIndependentStep();
+			await ClickRatioPointAsync(new RatioPoint(0.565, 0.91), "局外+局内：固定确认", cancellationToken);
+			await DelayWithCancellationAsync(0.2, cancellationToken);
+			AppendLog("局外+局内：固定确认完成，执行旧版蓝海二段点位 2 轮兜底。");
+			await ClickBlueOceanFollowupGuardAsync(cancellationToken);
+			if (gateHit)
+			{
+				AppendLog("局外+局内：投资条件允许，进入局内棋盘和策略识别。");
+				await WaitForOpeningBoardReadyAsync("局外+局内", InGameOpeningFlow.OpeningBoardPostDetectionWaitSeconds, cancellationToken);
+				await DeployOpeningCharactersAsync(cancellationToken);
+				await TryHandleGalaStarChoiceAsync(cancellationToken);
+				await RunOpeningBattlesUntilTwoContinueClicksAsync(cancellationToken);
+				await RunStrategyRecognitionAsync(strategyName, strategyAliases, allowExtraStrategyRefresh, cancellationToken);
+				if (_automationSuccessStop)
+				{
+					_combinedSuccessMessage = "成功刷出局内目标策略：" + strategyName + "！";
+					break;
+				}
+				AppendLog("局外+局内：本轮策略未命中，退出结算并返回货币战争。");
+			}
+			else
+			{
+				AppendLog("局外+局内：本轮不进入局内，直接退出并重开。");
+			}
+			await RunIndependentReturnToCurrencyWarsAsync(cancellationToken);
+			AppendLog($"局外+局内：第 {round} 轮完成，继续下一轮。");
+			round++;
+		}
+	}
+
+	private async Task<BasicScanEvaluation?> RunCombinedOuterFlowBeforeInvestmentAsync(CancellationToken cancellationToken)
+	{
+		await RapidAdvanceOpeningPagesAsync("局外+局内", cancellationToken);
+		BasicScanEvaluation? evaluation = null;
+		if (_config.DebuffEnabled || _config.BlockedEnabled)
+		{
+			evaluation = await WaitForDebuffEvaluationAsync("局外+局内", cancellationToken);
+			if (_config.CombinedMainRule == CombinedMainRule.StopOnMatch
+				&& evaluation?.TargetSatisfied == true
+				&& !(_config.CombinedBlockedRule == CombinedBlockedRule.RestartOnMatch && evaluation.BlockedHit))
+			{
+				return evaluation;
+			}
+		}
+		await DelayWithCancellationAsync(0.6, cancellationToken);
+		await IndependentClickTextStepAsync("下一步", new _003C_003Ez__ReadOnlySingleElementList<string>("下一步"), CurrencyWarsFlow.FullWindow, new RatioPoint(0.88, 0.895), 8.0, 0.6, cancellationToken);
+		RefreshGameWindowForIndependentStep();
+		await ClickRatioPointAsync(new RatioPoint(0.5, 0.58), "局外+局内：点击空白继续", cancellationToken);
+		await DelayWithCancellationAsync(1.8, cancellationToken);
+		RefreshGameWindowForIndependentStep();
+		await ClickSafeInvestmentAsync(rememberChoice: true, useConfiguredInvestmentTargetsForBlacklist: false, cancellationToken);
+		await DelayWithCancellationAsync(InGameOpeningFlow.PresetInvestmentPostSafeChoiceDelaySeconds, cancellationToken);
+		RefreshGameWindowForIndependentStep();
+		await ClickRatioPointAsync(_lastSafeInvestmentPoint ?? new RatioPoint(0.5, 0.38), "局外+局内：动画后再次点击安全投资", cancellationToken);
+		return evaluation;
+	}
+
 	private async Task RunIndependentStrategyPresetLoopAsync(string strategyName, IReadOnlyList<string> strategyAliases, IReadOnlyList<string> investmentGateAliases, CancellationToken cancellationToken)
 	{
 		AppendLog("独立局内预设：启动缓冲 1 秒，固定使用统一速度。");
@@ -1047,25 +1865,39 @@ public partial class MainWindow : Window, IComponentConnector
 		int round = 1;
 		while (!cancellationToken.IsCancellationRequested)
 		{
-			AppendLog($"独立局内预设：第 {round} 轮开始，投资门槛：{string.Join("、", investmentGateAliases)}。");
+			bool skipInvestmentGate = investmentGateAliases.Count == 0;
+			AppendLog(skipInvestmentGate
+				? $"独立局内预设：第 {round} 轮开始，未设置投资目标，本轮不限制投资品质。"
+				: $"独立局内预设：第 {round} 轮开始，投资门槛：{string.Join("、", investmentGateAliases)}。");
 			await RefreshGameWindowForIndependentLoopAsync(cancellationToken);
 			await RunIndependentOuterFlowBeforeInvestmentAsync(cancellationToken);
-			AppendLog("独立局内预设：检查固定投资门槛。");
-			string? investmentGateHit = await ExecuteIndependentInvestmentGateAsync(investmentGateAliases, cancellationToken);
-			bool gateHit = !string.IsNullOrWhiteSpace(investmentGateHit);
-			bool allowExtraRightStrategyRefresh = IsExtraStrategyRefreshInvestment(investmentGateHit);
+			string? investmentGateHit = null;
+			if (skipInvestmentGate)
+			{
+				AppendLog("独立局内预设：投资目标为空，跳过投资扫描和刷新，自动选择安全投资后直接进入局内。");
+				await ClickSafeInvestmentAsync(rememberChoice: false, useConfiguredInvestmentTargetsForBlacklist: false, cancellationToken);
+			}
+			else
+			{
+				AppendLog("独立局内预设：检查固定投资门槛。");
+				investmentGateHit = await ExecuteIndependentInvestmentGateAsync(investmentGateAliases, cancellationToken);
+			}
+			bool gateHit = skipInvestmentGate || !string.IsNullOrWhiteSpace(investmentGateHit);
+			bool allowExtraStrategyRefresh = IsExtraStrategyRefreshInvestment(investmentGateHit);
 			await DelayWithCancellationAsync(0.4, cancellationToken);
 			RefreshGameWindowForIndependentStep();
 			await ClickRatioPointAsync(new RatioPoint(0.565, 0.91), "独立局内预设：固定确认", cancellationToken);
 			await DelayWithCancellationAsync(0.2, cancellationToken);
+			AppendLog("独立局内预设：固定确认完成，执行旧版蓝海二段点位 2 轮兜底。");
+			await ClickBlueOceanFollowupGuardAsync(cancellationToken);
 			if (gateHit)
 			{
-				AppendLog("独立局内预设：投资门槛命中，等待局内棋盘稳定后进入 1-1 / 1-2。");
-				await DelayWithCancellationAsync(5.7, cancellationToken);
+				AppendLog("独立局内预设：投资门槛命中，识别局内棋盘后进入 1-1 / 1-2。");
+				await WaitForOpeningBoardReadyAsync("独立局内预设", InGameOpeningFlow.OpeningBoardPostDetectionWaitSeconds, cancellationToken);
 				await DeployOpeningCharactersAsync(cancellationToken);
 				await TryHandleGalaStarChoiceAsync(cancellationToken);
 				await RunOpeningBattlesUntilTwoContinueClicksAsync(cancellationToken);
-				await RunStrategyRecognitionAsync(strategyName, strategyAliases, allowExtraRightStrategyRefresh, cancellationToken);
+				await RunStrategyRecognitionAsync(strategyName, strategyAliases, allowExtraStrategyRefresh, cancellationToken);
 				if (_automationSuccessStop)
 				{
 					break;
@@ -1084,9 +1916,7 @@ public partial class MainWindow : Window, IComponentConnector
 
 	private async Task RunIndependentOuterFlowBeforeInvestmentAsync(CancellationToken cancellationToken)
 	{
-		await IndependentClickTextStepAsync("开始「货币战争」", new global::_003C_003Ez__ReadOnlyArray<string>(new string[3] { "开始货币战争", "开始", "货币战争" }), CurrencyWarsFlow.RightBottom, new RatioPoint(0.82, 0.91), 8.0, 0.8, cancellationToken);
-		await IndependentClickTextStepAsync("进入标准博弈", new global::_003C_003Ez__ReadOnlyArray<string>(new string[3] { "进入标准博弈", "开始标准博弈", "标准博弈" }), CurrencyWarsFlow.RightBottom, new RatioPoint(0.82, 0.9), 12.0, 0.7, cancellationToken);
-		await IndependentClickTextStepAsync("开始对局", new global::_003C_003Ez__ReadOnlyArray<string>(new string[2] { "开始对局", "对局" }), CurrencyWarsFlow.FullWindow, new RatioPoint(0.88, 0.895), 8.0, 0.6, cancellationToken);
+		await RapidAdvanceOpeningPagesAsync("独立局内预设", cancellationToken);
 		if (_config.DebuffEnabled)
 		{
 			await WaitForIndependentDebuffResultAsync(cancellationToken);
@@ -1103,14 +1933,74 @@ public partial class MainWindow : Window, IComponentConnector
 		await ClickRatioPointAsync(_lastSafeInvestmentPoint ?? new RatioPoint(0.5, 0.38), "独立局内预设：动画后再次点击安全投资", cancellationToken);
 	}
 
+	private async Task RapidAdvanceOpeningPagesAsync(string scope, CancellationToken cancellationToken)
+	{
+		RefreshGameWindowForIndependentStep();
+		int clickCount = (int)Math.Ceiling(CurrencyWarsFlow.OpeningRapidAdvanceDurationSeconds / CurrencyWarsFlow.OpeningRapidAdvanceClickIntervalSeconds);
+		AppendLog($"{scope}：前三页使用共同固定点位持续点击 {CurrencyWarsFlow.OpeningRapidAdvanceDurationSeconds:g} 秒，间隔 {CurrencyWarsFlow.OpeningRapidAdvanceClickIntervalSeconds:g} 秒，共 {clickCount} 次；结束后直接开始主词条 OCR。");
+		for (int i = 0; i < clickCount; i++)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			await ClickRatioPointAsync(CurrencyWarsFlow.OpeningRapidAdvancePoint, $"{scope}：开局连续点击 {i + 1}/{clickCount}", cancellationToken);
+			if (i + 1 < clickCount)
+			{
+				await DelayWithCancellationAsync(CurrencyWarsFlow.OpeningRapidAdvanceClickIntervalSeconds, cancellationToken);
+			}
+		}
+		double clickSpanSeconds = Math.Max(0.0, (clickCount - 1) * CurrencyWarsFlow.OpeningRapidAdvanceClickIntervalSeconds);
+		double remainingSeconds = CurrencyWarsFlow.OpeningRapidAdvanceDurationSeconds - clickSpanSeconds;
+		if (remainingSeconds > 0.0)
+		{
+			await DelayWithCancellationAsync(remainingSeconds, cancellationToken);
+		}
+	}
+
 	private async Task RunIndependentReturnToCurrencyWarsAsync(CancellationToken cancellationToken)
 	{
 		RefreshGameWindowForIndependentStep();
 		await ExecuteFastExitToSettlementAsync(cancellationToken);
 		await DelayWithCancellationAsync(0.4, cancellationToken);
-		await IndependentClickBottomReturnButtonAsync("下一步", new _003C_003Ez__ReadOnlySingleElementList<string>("下一步"), 8.0, 0.4, cancellationToken);
-		await IndependentClickBottomReturnButtonAsync("下一页", new _003C_003Ez__ReadOnlySingleElementList<string>("下一页"), 8.0, 0.5, cancellationToken);
-		await IndependentClickBottomReturnButtonAsync("返回货币战争", new global::_003C_003Ez__ReadOnlyArray<string>(new string[2] { "返回货币战争", "返回" }), 8.0, 0.7, cancellationToken);
+		await ClickBottomReturnSequenceWhenNextDetectedAsync("独立局内预设", new _003C_003Ez__ReadOnlySingleElementList<string>("下一步"), 8.0, cancellationToken);
+		await EnsureReturnedToCurrencyWarsAsync("独立局内预设", cancellationToken);
+		await RestartOcrAtSafePointIfDueAsync("局内循环", cancellationToken);
+	}
+
+	private async Task ClickFixedBottomReturnSequenceAsync(string scope, CancellationToken cancellationToken)
+	{
+		RatioPoint point = new RatioPoint(0.5, 0.829);
+		AppendLog($"{scope}：识别到“下一步”后立即使用底部固定点位连续点击 {CurrencyWarsFlow.BottomReturnFixedClickCount} 次，不等待“下一页”。");
+		for (int i = 0; i < CurrencyWarsFlow.BottomReturnFixedClickCount; i++)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			await ClickRatioPointAsync(point, $"{scope}：结算返回固定连点 {i + 1}/{CurrencyWarsFlow.BottomReturnFixedClickCount}", cancellationToken);
+			await DelayWithCancellationAsync(CurrencyWarsFlow.FastExitProbeIntervalSeconds, cancellationToken);
+		}
+		await DelayWithCancellationAsync(0.7, cancellationToken);
+	}
+
+	private async Task EnsureReturnedToCurrencyWarsAsync(string scope, CancellationToken cancellationToken)
+	{
+		string[] homeAliases = new string[1] { "开始货币战争" };
+		string[] staleProgressAliases = new string[3] { "当前进度", "继续进度", "结束并结算" };
+		DateTime deadline = DateTime.UtcNow.AddSeconds(4.0);
+		string lastText = "";
+		while (DateTime.UtcNow < deadline)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			OcrScanResult scan = await CaptureAndOcrAsync(CurrencyWarsFlow.FullWindow, cancellationToken);
+			lastText = scan.RawText;
+			if ((object)OcrClickResolver.FindBest(scan, homeAliases, _config.ButtonFuzzyScore) != null)
+			{
+				AppendLog(scope + "：固定连点后已确认返回货币战争首页。");
+				return;
+			}
+			if ((object)OcrClickResolver.FindBest(scan, staleProgressAliases, _config.ButtonFuzzyScore) != null)
+			{
+				throw new InvalidOperationException("结算返回未完成，仍检测到当前进度/继续进度页面。已阻止开始下一轮，避免误点进入标准博弈。最后 OCR：" + ShortText(lastText));
+			}
+			await DelayWithCancellationAsync(0.3, cancellationToken);
+		}
+		throw new InvalidOperationException("固定连点后未能确认返回货币战争首页。已阻止开始下一轮。最后 OCR：" + ShortText(lastText));
 	}
 
 	private async Task<string?> ExecuteIndependentInvestmentGateAsync(IReadOnlyList<string> investmentGateAliases, CancellationToken cancellationToken)
@@ -1137,30 +2027,46 @@ public partial class MainWindow : Window, IComponentConnector
 			}
 		}
 		await ClickSafeInvestmentAsync(rememberChoice: false, useConfiguredInvestmentTargetsForBlacklist: false, cancellationToken);
-		await ClickBlueOceanFollowupGuardAsync(cancellationToken);
+		AppendLog("独立局内预设：投资门槛未命中，已选择默认安全投资，等待后续固定确认。");
 		return null;
 	}
 
 	private async Task<string?> TryClickIndependentInvestmentTargetAsync(string scope, IReadOnlyList<string> investmentGateAliases, CancellationToken cancellationToken)
 	{
 		AppendLog($"独立局内预设：{scope}开始，固定扫描 {InGameOpeningFlow.PresetInvestmentScanAttemptCount} 次。");
+		OcrClickCandidate? bestCandidate = null;
+		int bestPriority = int.MaxValue;
 		for (int attempt = 1; attempt <= InGameOpeningFlow.PresetInvestmentScanAttemptCount; attempt++)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 			AppendLog($"独立局内预设：{scope}第 {attempt} 次扫描上半屏。");
 			OcrScanResult scan = await CaptureAndOcrAsync(CurrencyWarsFlow.TopHalf, cancellationToken);
 			AppendLog($"独立局内预设：{scope}第 {attempt} 次 OCR 原文：{ShortText(scan.RawText)}");
-			OcrClickCandidate candidate = OcrClickResolver.FindBest(scan, investmentGateAliases, 88);
-			if ((object)candidate != null && (object)_latestCaptureScreenRegion != null)
+			OcrClickCandidate? candidate = OcrClickResolver.FindByPriority(scan, investmentGateAliases, 88);
+			if (candidate != null)
 			{
-				Rect bounds = candidate.Item.Bounds;
-				await ExecuteClickAsync(new ClickRequest("独立局内预设：投资门槛：" + candidate.Item.Text, _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0), _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0)));
-				return candidate.Alias;
+				int priority = GetAliasPriority(investmentGateAliases, candidate.Alias);
+				if (priority < bestPriority)
+				{
+					bestCandidate = candidate;
+					bestPriority = priority;
+				}
+				if (bestPriority == 0)
+				{
+					break;
+				}
 			}
 			if (attempt < InGameOpeningFlow.PresetInvestmentScanAttemptCount)
 			{
 				await DelayWithCancellationAsync(0.08, cancellationToken);
 			}
+		}
+		if (bestCandidate != null && _latestCaptureScreenRegion != null)
+		{
+			Rect bounds = bestCandidate.Item.Bounds;
+			await ExecuteClickAsync(new ClickRequest("独立局内预设：投资门槛：" + bestCandidate.Item.Text, _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0), _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0)));
+			AppendLog($"独立局内预设：按优先级选择第 {bestPriority + 1} 项：{bestCandidate.Alias}。");
+			return bestCandidate.Alias;
 		}
 		AppendLog("独立局内预设：" + scope + "结束，未命中固定投资门槛。");
 		return null;
@@ -1179,59 +2085,66 @@ public partial class MainWindow : Window, IComponentConnector
 			OcrClickCandidate candidate = OcrClickResolver.FindBest(scan, aliases, _config.ButtonFuzzyScore);
 			if ((object)candidate != null && (object)_latestCaptureScreenRegion != null)
 			{
-				Rect bounds = candidate.Item.Bounds;
-				int clickX = _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0);
-				int clickY = _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0);
-				await ExecuteClickAsync(new ClickRequest("独立局内预设：" + name + "：" + candidate.Item.Text, clickX, clickY));
-				await DelayWithCancellationAsync(standardDelaySeconds, cancellationToken);
-				return;
+				IReadOnlyList<string> verificationAliases = GetPostClickVerificationAliases(name, aliases);
+				if (await ClickTextUntilPageChangesAsync("独立局内预设：" + name, candidate, verificationAliases, searchRegion, null, cancellationToken))
+				{
+					await DelayWithCancellationAsync(standardDelaySeconds, cancellationToken);
+					return;
+				}
+				AppendLog("独立局内预设：" + name + " 点击后原按钮仍存在，继续在超时时间内重试。");
 			}
 			await DelayWithCancellationAsync(0.6, cancellationToken);
 		}
 		if ((object)fallbackPoint != null)
 		{
 			AppendLog("独立局内预设：" + name + " OCR 未命中，使用兜底坐标。最后 OCR：" + ShortText(lastText));
-			await ClickRatioPointAsync(fallbackPoint, "独立局内预设：" + name + " 兜底", cancellationToken);
+			bool fallbackSucceeded = await ClickFixedPointUntilPageChangesAsync("独立局内预设：" + name + " 兜底", fallbackPoint, GetPostClickVerificationAliases(name, aliases), searchRegion, cancellationToken);
+			if (!fallbackSucceeded && GetExpectedPostClickAliases(name).Count > 0)
+			{
+				throw new InvalidOperationException("独立局内预设：" + name + " 兜底点击后没有识别到目标下一页，已停止继续执行，避免跳错步骤。");
+			}
 			await DelayWithCancellationAsync(standardDelaySeconds, cancellationToken);
 			return;
 		}
 		throw new InvalidOperationException("独立局内预设超时：没有找到按钮文字“" + name + "”。最后 OCR：" + ShortText(lastText));
 	}
 
-	private async Task IndependentClickBottomReturnButtonAsync(string name, IReadOnlyList<string> aliases, double timeoutSeconds, double standardDelaySeconds, CancellationToken cancellationToken)
+	private async Task ClickBottomReturnSequenceWhenNextDetectedAsync(string scope, IReadOnlyList<string> aliases, double timeoutSeconds, CancellationToken cancellationToken)
 	{
 		RefreshGameWindowForIndependentStep();
 		DateTime deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
 		string lastText = "";
-		RatioPoint point = new RatioPoint(0.5, 0.829);
 		while (DateTime.UtcNow < deadline)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 			OcrScanResult scan = await CaptureAndOcrAsync(CurrencyWarsFlow.FullWindow, cancellationToken);
 			lastText = scan.RawText;
-			if ((object)OcrClickResolver.FindBest(scan, aliases, _config.ButtonFuzzyScore) != null)
+			OcrClickCandidate candidate = OcrClickResolver.FindBest(scan, aliases, _config.ButtonFuzzyScore);
+			if ((object)candidate != null)
 			{
-				await ClickRatioPointAsync(point, "独立局内预设：" + name + "固定坐标", cancellationToken);
-				await DelayWithCancellationAsync(standardDelaySeconds, cancellationToken);
+				AppendLog($"{scope}：已识别到“下一步”（匹配 {candidate.Alias}），不等待下一页，立即开始固定连点。");
+				await ClickFixedBottomReturnSequenceAsync(scope, cancellationToken);
 				return;
 			}
 			await DelayWithCancellationAsync(0.15, cancellationToken);
 		}
-		AppendLog("独立局内预设：" + name + " OCR 未命中，使用底部固定坐标。最后 OCR：" + ShortText(lastText));
-		await ClickRatioPointAsync(point, "独立局内预设：" + name + "固定坐标兜底", cancellationToken);
-		await DelayWithCancellationAsync(standardDelaySeconds, cancellationToken);
+		AppendLog(scope + "：下一步 OCR 未命中，直接使用底部固定连点兜底。最后 OCR：" + ShortText(lastText));
+		await ClickFixedBottomReturnSequenceAsync(scope, cancellationToken);
 	}
 
 	private async Task DeployOpeningCharactersAsync(CancellationToken cancellationToken)
 	{
 		AppendLog("局内识别：固定拖拽底部前 4 个备战席到前台前 4 格。");
-		int count = Math.Min(InGameOpeningFlow.PrepareSlots.Length, InGameOpeningFlow.ForwardSlots.Length);
+		int count = Math.Min(4, InGameOpeningFlow.ForwardSlots.Length);
 		for (int i = 0; i < count; i++)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 			await ExecuteDragRatioAsync(InGameOpeningFlow.PrepareSlots[i], InGameOpeningFlow.ForwardSlots[i], $"局内识别：备战席 {i + 1} -> 前台 {i + 1}", cancellationToken);
-			await DelayWithCancellationAsync(0.25, cancellationToken);
+			await DelayWithCancellationAsync(0.5, cancellationToken);
 		}
+		AppendLog("局内识别：追加拖拽备战席 5 到前台 1。");
+		await ExecuteDragRatioAsync(InGameOpeningFlow.PrepareSlots[4], InGameOpeningFlow.ForwardSlots[0], "局内识别：追加备战席 5 -> 前台 1", cancellationToken);
+		await DelayWithCancellationAsync(0.5, cancellationToken);
 	}
 
 	private async Task TryHandleGalaStarChoiceAsync(CancellationToken cancellationToken)
@@ -1313,20 +2226,87 @@ public partial class MainWindow : Window, IComponentConnector
 	private async Task<bool> ClickInGameBattleButtonAsync(int battleStartCount, CancellationToken cancellationToken)
 	{
 		int nextCount = battleStartCount + 1;
-		AppendLog($"局内识别：准备点击第 {nextCount} 次出战，优先 OCR 查找按钮。");
+		AppendLog($"局内识别：准备点击第 {nextCount} 次出战，固定快速点击 {InGameOpeningFlow.BattleButtonClickCount} 次后确认按钮是否消失。");
 		OcrClickCandidate candidate = OcrClickResolver.FindBest(await CaptureAndOcrAsync(InGameOpeningFlow.BattleButtonRegion, cancellationToken), InGameOpeningFlow.BattleButtonAliases, _config.ButtonFuzzyScore);
 		if ((object)candidate != null && (object)_latestCaptureScreenRegion != null)
 		{
 			Rect bounds = candidate.Item.Bounds;
 			ClickRequest request = new ClickRequest($"局内识别：第 {nextCount} 次{candidate.Item.Text}", _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0), _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0));
-			await ExecuteRepeatedClickAsync(request, 3, 0.4, cancellationToken);
-			await TryHandleUnderfilledTeamConfirmAsync(cancellationToken);
+			await ExecuteRepeatedClickAsync(request, InGameOpeningFlow.BattleButtonClickCount, InGameOpeningFlow.BattleButtonClickIntervalSeconds, cancellationToken);
+		}
+		else
+		{
+			await ClickRatioPointRepeatedAsync(InGameOpeningFlow.BattleButton, $"局内识别：第 {nextCount} 次出战兜底", InGameOpeningFlow.BattleButtonClickCount, InGameOpeningFlow.BattleButtonClickIntervalSeconds, cancellationToken);
+		}
+		await TryHandleUnderfilledTeamConfirmAsync(cancellationToken);
+		await DelayWithCancellationAsync(0.8, cancellationToken);
+		OcrClickCandidate remaining = OcrClickResolver.FindBest(await CaptureAndOcrAsync(InGameOpeningFlow.BattleButtonRegion, cancellationToken), InGameOpeningFlow.BattleButtonAliases, _config.ButtonFuzzyScore);
+		if ((object)remaining == null)
+		{
+			AppendLog($"局内识别：第 {nextCount} 次出战按钮已消失，确认三连点生效。");
 			return true;
 		}
-		AppendLog($"局内识别：第 {nextCount} 次 OCR 未找到出战按钮，使用固定坐标兜底。");
-		await ClickRatioPointRepeatedAsync(InGameOpeningFlow.BattleButton, $"局内识别：第 {nextCount} 次出战兜底", 3, 0.4, cancellationToken);
-		await TryHandleUnderfilledTeamConfirmAsync(cancellationToken);
-		return true;
+		AppendLog($"局内识别：第 {nextCount} 次出战三连点后按钮仍存在（{remaining.Item.Text}），本次不计入已出战次数，交回主循环继续识别。");
+		return false;
+	}
+
+	private async Task EnsureAutoBattleEnabledAsync(CancellationToken cancellationToken)
+	{
+		DateTime deadline = DateTime.UtcNow.AddSeconds(InGameOpeningFlow.AutoBattleDetectionTimeoutSeconds);
+		int completedScans = 0;
+		int switchAttempts = 0;
+		while (DateTime.UtcNow < deadline)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
+			CaptureRegion region = new CaptureRegion("自动战斗关闭标识", InGameOpeningFlow.AutoBattleDisabledIndicatorRegion.X, InGameOpeningFlow.AutoBattleDisabledIndicatorRegion.Y, InGameOpeningFlow.AutoBattleDisabledIndicatorRegion.Width, InGameOpeningFlow.AutoBattleDisabledIndicatorRegion.Height);
+			BitmapSource image = _windowCapture.Capture(_gameWindow, region);
+			AutoBattleDetectionResult detection = AutoBattleStateDetector.Detect(image);
+			completedScans++;
+			if (!detection.IsDisabled)
+			{
+				if (switchAttempts > 0)
+				{
+					AppendLog($"局内识别：自动战斗关闭标识已消失，确认已尝试开启；本场共按 V {switchAttempts} 次。最后相似度 {detection.Similarity:0.000}。");
+					return;
+				}
+				await DelayWithCancellationAsync(InGameOpeningFlow.AutoBattleDetectionIntervalSeconds, cancellationToken);
+				continue;
+			}
+
+			AppendLog($"局内识别：检测到自动战斗关闭固定图标，相似度 {detection.Similarity:0.000}，准备按 V 开启。");
+			if (switchAttempts < InGameOpeningFlow.AutoBattleMaxSwitchAttempts)
+			{
+				switchAttempts++;
+				AppendLog((await _clickService.PressKeyAsync("V", _gameWindow.Handle, cancellationToken)).Message);
+				await DelayWithCancellationAsync(InGameOpeningFlow.AutoBattleVerificationDelaySeconds, cancellationToken);
+				continue;
+			}
+
+			AppendLog($"局内识别：自动战斗关闭图标仍存在，但本场已达到 {InGameOpeningFlow.AutoBattleMaxSwitchAttempts} 次按 V 上限，不再切换。");
+			await DelayWithCancellationAsync(InGameOpeningFlow.AutoBattleDetectionIntervalSeconds, cancellationToken);
+		}
+		if (switchAttempts == 0)
+		{
+			AppendLog($"局内识别：{completedScans} 次固定图标扫描均未发现自动战斗关闭标识，本场未发送切换按键。");
+			return;
+		}
+		AppendLog($"局内识别：自动战斗固定图标检测超时，共扫描 {completedScans} 次、按 V {switchAttempts} 次。");
+	}
+
+	private async Task CheckAutoBattleDisabledIndicatorOnceAsync(CancellationToken cancellationToken)
+	{
+		_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
+		CaptureRegion region = new CaptureRegion("自动战斗关闭标识", InGameOpeningFlow.AutoBattleDisabledIndicatorRegion.X, InGameOpeningFlow.AutoBattleDisabledIndicatorRegion.Y, InGameOpeningFlow.AutoBattleDisabledIndicatorRegion.Width, InGameOpeningFlow.AutoBattleDisabledIndicatorRegion.Height);
+		BitmapSource image = _windowCapture.Capture(_gameWindow, region);
+		AutoBattleDetectionResult detection = AutoBattleStateDetector.Detect(image);
+		if (!detection.IsDisabled)
+		{
+			return;
+		}
+
+		AppendLog($"局内识别：持续检测命中自动战斗关闭固定图标，相似度 {detection.Similarity:0.000}，按 V 开启。");
+		AppendLog((await _clickService.PressKeyAsync("V", _gameWindow.Handle, cancellationToken)).Message);
 	}
 
 	private async Task ExecuteRepeatedClickAsync(ClickRequest request, int count, double intervalSeconds, CancellationToken cancellationToken)
@@ -1381,6 +2361,10 @@ public partial class MainWindow : Window, IComponentConnector
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 			OcrScanResult scan = await CaptureAndOcrAsync(CurrencyWarsFlow.FullWindow, cancellationToken);
+			if (battleStartCount > continueChallengeCount)
+			{
+				await CheckAutoBattleDisabledIndicatorOnceAsync(cancellationToken);
+			}
 			if (await TryHandleRoleChoicePopupAsync(scan, cancellationToken))
 			{
 				continue;
@@ -1388,9 +2372,14 @@ public partial class MainWindow : Window, IComponentConnector
 			OcrClickCandidate continueCandidate = OcrClickResolver.FindBest(scan, InGameOpeningFlow.ContinueButtonAliases, _config.ButtonFuzzyScore);
 			if ((object)continueCandidate != null && (object)_latestCaptureScreenRegion != null)
 			{
-				Rect bounds = continueCandidate.Item.Bounds;
-				await ExecuteClickAsync(new ClickRequest("局内识别：" + continueCandidate.Item.Text, _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0), _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0)));
-				if (TextMatcher.Normalize(continueCandidate.Alias) == TextMatcher.Normalize("继续挑战"))
+				string clickedAlias = continueCandidate.Alias;
+				if (!(await ClickTextUntilPageChangesAsync("局内识别：" + continueCandidate.Item.Text, continueCandidate, new string[1] { clickedAlias }, CurrencyWarsFlow.FullWindow, null, cancellationToken)))
+				{
+					AppendLog("局内识别：" + continueCandidate.Item.Text + " 连续点击后仍存在，本次不计数，继续检测当前画面。");
+					await DelayWithCancellationAsync(0.6, cancellationToken);
+					continue;
+				}
+				if (TextMatcher.Normalize(clickedAlias) == TextMatcher.Normalize("继续挑战"))
 				{
 					continueChallengeCount++;
 					AppendLog($"局内识别：已点击继续挑战 {continueChallengeCount}/2 次。");
@@ -1400,7 +2389,7 @@ public partial class MainWindow : Window, IComponentConnector
 						return;
 					}
 				}
-				await DelayWithCancellationAsync(1.0, cancellationToken);
+				await DelayWithCancellationAsync(0.2, cancellationToken);
 			}
 			else if ((object)OcrClickResolver.FindBest(scan, InGameOpeningFlow.BattleButtonAliases, _config.ButtonFuzzyScore) != null)
 			{
@@ -1408,7 +2397,13 @@ public partial class MainWindow : Window, IComponentConnector
 				{
 					battleStartCount++;
 					AppendLog($"局内识别：已点击出战 {battleStartCount} 次。");
-					await DelayWithCancellationAsync(10.0, cancellationToken);
+					DateTime battleWaitStartedAt = DateTime.UtcNow;
+					await EnsureAutoBattleEnabledAsync(cancellationToken);
+					double remainingBattleWaitSeconds = InGameOpeningFlow.AfterBattleClickSeconds - (DateTime.UtcNow - battleWaitStartedAt).TotalSeconds;
+					if (remainingBattleWaitSeconds > 0.0)
+					{
+						await DelayWithCancellationAsync(remainingBattleWaitSeconds, cancellationToken);
+					}
 				}
 			}
 			else
@@ -1420,13 +2415,12 @@ public partial class MainWindow : Window, IComponentConnector
 		AppendLog("局内识别：开局两把等待超时，按当前状态结束。");
 	}
 
-	private async Task RunStrategyRecognitionAsync(string strategyName, IReadOnlyList<string> strategyAliases, bool allowExtraRightRefresh, CancellationToken cancellationToken)
+	private async Task RunStrategyRecognitionAsync(string strategyName, IReadOnlyList<string> strategyAliases, bool allowExtraRefresh, CancellationToken cancellationToken)
 	{
-		await DelayWithCancellationAsync(10.5, cancellationToken);
 		AppendLog("局内识别：开始策略识别，目标：" + strategyName + "。");
-		if (!(await IsStrategySelectionScreenAsync(cancellationToken)))
+		if (!(await WaitForMajorPageAsync("局内识别：策略选择页", InGameOpeningFlow.StrategyScreenAliases, CurrencyWarsFlow.FullWindow, InGameOpeningFlow.StrategyScreenWaitTimeoutSeconds, 0.8, InGameOpeningFlow.StrategyFuzzyScore, cancellationToken)))
 		{
-			AppendLog("局内识别：当前不是策略选择界面，本轮不做策略命中判断。");
+			AppendLog("局内识别：策略选择页等待超时，本轮不做策略命中判断。");
 			return;
 		}
 		if (await TryClickTargetStrategyAsync("首次策略识别", strategyAliases, 2, cancellationToken))
@@ -1436,41 +2430,52 @@ public partial class MainWindow : Window, IComponentConnector
 		}
 		AppendLog("局内识别：首次策略未命中，点击 3 个刷新按钮。");
 		RatioPoint[] strategyRefreshButtons = InGameOpeningFlow.StrategyRefreshButtons;
-		foreach (RatioPoint point in strategyRefreshButtons)
+		for (int positionIndex = 0; positionIndex < strategyRefreshButtons.Length; positionIndex++)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
-			await ClickRatioPointAsync(point, "局内识别：刷新策略", cancellationToken);
-			await DelayWithCancellationAsync(0.2, cancellationToken);
+			await ClickRatioPointAsync(strategyRefreshButtons[positionIndex], "局内识别：刷新策略", cancellationToken);
+			if (positionIndex < strategyRefreshButtons.Length - 1)
+			{
+				await DelayWithCancellationAsync(0.2, cancellationToken);
+			}
 		}
+		await DelayWithCancellationAsync(InGameOpeningFlow.StrategyRefreshDelaySeconds, cancellationToken);
 		if (await TryClickTargetStrategyAsync("左中右刷新后策略识别", strategyAliases, 1, cancellationToken))
 		{
 			StopAutomationForSuccess("状态：局内策略命中停止");
 			return;
 		}
-		if (!allowExtraRightRefresh)
+		if (!allowExtraRefresh)
 		{
-			AppendLog("局内识别：本轮投资不是“银·金·彩”，跳过右侧额外刷新。");
+			AppendLog("局内识别：本轮投资不是“银·金·彩”，跳过左中右额外刷新。");
 		}
-		RatioPoint rightRefreshPoint = InGameOpeningFlow.StrategyRefreshButtons[^1];
-		for (int i = 0; allowExtraRightRefresh && i < InGameOpeningFlow.ExtraRightStrategyRefreshCount; i++)
+		string[] refreshPositionNames = new string[3] { "左侧", "中间", "右侧" };
+		for (int i = 0; allowExtraRefresh && i < InGameOpeningFlow.ExtraStrategyRefreshCountPerButton; i++)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
-			await ClickRatioPointAsync(rightRefreshPoint, $"局内识别：额外刷新右侧策略 {i + 1}/{InGameOpeningFlow.ExtraRightStrategyRefreshCount}", cancellationToken);
+			for (int positionIndex = 0; positionIndex < strategyRefreshButtons.Length; positionIndex++)
+			{
+				await ClickRatioPointAsync(strategyRefreshButtons[positionIndex], $"局内识别：银·金·彩额外刷新第 {i + 1}/{InGameOpeningFlow.ExtraStrategyRefreshCountPerButton} 轮：{refreshPositionNames[positionIndex]}", cancellationToken);
+				if (positionIndex < strategyRefreshButtons.Length - 1)
+				{
+					await DelayWithCancellationAsync(0.2, cancellationToken);
+				}
+			}
 			await DelayWithCancellationAsync(InGameOpeningFlow.StrategyRefreshDelaySeconds, cancellationToken);
-			if (await TryClickTargetStrategyAsync($"右侧第 {i + 2} 次刷新后策略识别", strategyAliases, InGameOpeningFlow.InitialStrategyScanAttemptCount, cancellationToken))
+			if (await TryClickTargetStrategyAsync($"左中右第 {i + 2} 轮刷新后策略识别", strategyAliases, InGameOpeningFlow.InitialStrategyScanAttemptCount, cancellationToken))
 			{
 				StopAutomationForSuccess("状态：局内策略命中停止");
 				return;
 			}
 		}
-		AppendLog("局内识别：刷新后仍未命中目标策略，随机选择 1 张策略后点击确认。");
+		AppendLog("局内识别：刷新后仍未命中目标策略，优先选择图鉴未收集策略；没有标识时再随机选择。");
 		await ClickRandomStrategyCardAsync(cancellationToken);
 		await ClickStrategyConfirmAsync(cancellationToken);
 	}
 
 	private async Task<bool> IsStrategySelectionScreenAsync(CancellationToken cancellationToken)
 	{
-		OcrClickCandidate candidate = OcrClickResolver.FindBest(await CaptureAndOcrAsync(CurrencyWarsFlow.FullWindow, cancellationToken), InGameOpeningFlow.StrategyScreenAliases, 83);
+		OcrClickCandidate candidate = OcrClickResolver.FindBest(await CaptureAndOcrAsync(CurrencyWarsFlow.FullWindow, cancellationToken), InGameOpeningFlow.StrategyScreenAliases, InGameOpeningFlow.StrategyFuzzyScore);
 		if ((object)candidate == null)
 		{
 			return false;
@@ -1482,22 +2487,37 @@ public partial class MainWindow : Window, IComponentConnector
 	private async Task<bool> TryClickTargetStrategyAsync(string scope, IReadOnlyList<string> strategyAliases, int scanAttemptCount, CancellationToken cancellationToken)
 	{
 		AppendLog("局内识别：" + scope + "开始。");
+		OcrClickCandidate? bestCandidate = null;
+		int bestPriority = int.MaxValue;
 		for (int attempt = 1; attempt <= scanAttemptCount; attempt++)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 			AppendLog($"局内识别：{scope}第 {attempt} 次扫描。");
-			OcrClickCandidate candidate = OcrClickResolver.FindBest(await CaptureAndOcrAsync(InGameOpeningFlow.StrategyRegion, cancellationToken), strategyAliases, 83);
-			if ((object)candidate != null && (object)_latestCaptureScreenRegion != null)
+			OcrClickCandidate? candidate = OcrClickResolver.FindByPriority(await CaptureAndOcrAsync(InGameOpeningFlow.StrategyRegion, cancellationToken), strategyAliases, InGameOpeningFlow.StrategyFuzzyScore);
+			if (candidate != null)
 			{
-				Rect bounds = candidate.Item.Bounds;
-				await ExecuteClickAsync(new ClickRequest("局内策略：" + candidate.Item.Text, _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0), _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0)));
-				AppendLog($"局内识别：{scope}命中目标策略：{candidate.Alias}。");
-				return true;
+				int priority = GetAliasPriority(strategyAliases, candidate.Alias);
+				if (priority < bestPriority)
+				{
+					bestCandidate = candidate;
+					bestPriority = priority;
+				}
+				if (bestPriority == 0)
+				{
+					break;
+				}
 			}
 			if (attempt < scanAttemptCount)
 			{
 				await DelayWithCancellationAsync(0.1, cancellationToken);
 			}
+		}
+		if (bestCandidate != null && _latestCaptureScreenRegion != null)
+		{
+			Rect bounds = bestCandidate.Item.Bounds;
+			await ExecuteClickAsync(new ClickRequest("局内策略：" + bestCandidate.Item.Text, _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0), _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0)));
+			AppendLog($"局内识别：{scope}按优先级命中第 {bestPriority + 1} 项：{bestCandidate.Alias}。");
+			return true;
 		}
 		AppendLog("局内识别：" + scope + "未命中目标策略。");
 		return false;
@@ -1517,6 +2537,11 @@ public partial class MainWindow : Window, IComponentConnector
 	{
 		RatioPoint[] points = InGameOpeningFlow.StrategyCards;
 		HashSet<int> blockedColumns = FindBlacklistedStrategyColumns(await CaptureAndOcrAsync(InGameOpeningFlow.StrategyRegion, cancellationToken));
+		if (await TryClickUncollectedStrategyCardAsync(blockedColumns, cancellationToken))
+		{
+			await DelayWithCancellationAsync(0.1, cancellationToken);
+			return;
+		}
 		List<int> candidates = (from item in Enumerable.Range(0, points.Length)
 			where !blockedColumns.Contains(item)
 			select item).ToList();
@@ -1533,12 +2558,53 @@ public partial class MainWindow : Window, IComponentConnector
 		await DelayWithCancellationAsync(0.1, cancellationToken);
 	}
 
+	private async Task<bool> TryClickUncollectedStrategyCardAsync(HashSet<int> blockedColumns, CancellationToken cancellationToken)
+	{
+		if ((object)_gameWindow == null)
+		{
+			return false;
+		}
+		string templatePath = Path.Combine(AppContext.BaseDirectory, "Assets", "Templates", "currency-wars-new.png");
+		if (!File.Exists(templatePath))
+		{
+			AppendLog("局内识别：缺少图鉴未收集标识模板，继续原随机兜底。");
+			return false;
+		}
+
+		BitmapImage marker = new BitmapImage();
+		marker.BeginInit();
+		marker.CacheOption = BitmapCacheOption.OnLoad;
+		marker.UriSource = new Uri(templatePath, UriKind.Absolute);
+		marker.EndInit();
+		marker.Freeze();
+		BitmapSource screenshot = _windowCapture.Capture(_gameWindow, new CaptureRegion("策略图鉴标识", 0.0, 0.0, 1.0, 1.0));
+		IReadOnlyList<StrategyCollectionMarkerMatch> matches = StrategyCollectionMarkerDetector.FindMatches(screenshot, marker, InGameOpeningFlow.StrategyCardSearchRegions, cancellationToken);
+		int[] preferredColumns = new int[3] { 1, 0, 2 };
+		foreach (int column in preferredColumns)
+		{
+			if (blockedColumns.Contains(column))
+			{
+				continue;
+			}
+			StrategyCollectionMarkerMatch match = matches.First((StrategyCollectionMarkerMatch item) => item.Column == column);
+			if (match.Score >= InGameOpeningFlow.StrategyCollectionMarkerThreshold)
+			{
+				await ClickRatioPointAsync(InGameOpeningFlow.StrategyCards[column], $"局内识别：选择图鉴未收集策略 {column + 1}", cancellationToken);
+				AppendLog($"局内识别：检测到第 {column + 1} 张策略的图鉴未收集标识（相似度 {match.Score:0.000}），优先选择。");
+				return true;
+			}
+		}
+
+		AppendLog("局内识别：未检测到可选的图鉴未收集标识，最高相似度：" + string.Join("、", matches.Select((StrategyCollectionMarkerMatch item) => $"{item.Column + 1}={item.Score:0.000}")) + "。");
+		return false;
+	}
+
 	private HashSet<int> FindBlacklistedStrategyColumns(OcrScanResult scan)
 	{
 		HashSet<int> blockedColumns = new HashSet<int>();
 		foreach (OcrTextItem item in scan.Items)
 		{
-			if (InGameOpeningFlow.StrategyChoiceBlacklist.Any((string word) => TextMatcher.FuzzyContains(item.Text, word, 83)))
+			if (InGameOpeningFlow.StrategyChoiceBlacklist.Any((string word) => TextMatcher.FuzzyContains(item.Text, word, InGameOpeningFlow.StrategyFuzzyScore)))
 			{
 				blockedColumns.Add(GetStrategyColumn(item));
 			}
@@ -1564,7 +2630,7 @@ public partial class MainWindow : Window, IComponentConnector
 
 	private async Task ClickStrategyConfirmAsync(CancellationToken cancellationToken)
 	{
-		await ClickRatioPointAsync(InGameOpeningFlow.StrategyConfirmPoint, "局内识别：策略固定确认", cancellationToken);
+		await ClickFixedPointUntilPageChangesAsync("局内识别：策略固定确认", InGameOpeningFlow.StrategyConfirmPoint, InGameOpeningFlow.StrategyScreenAliases, CurrencyWarsFlow.FullWindow, cancellationToken);
 	}
 
 	private async Task StartAutomationAsync()
@@ -1575,13 +2641,10 @@ public partial class MainWindow : Window, IComponentConnector
 		}
 		ReadUiToConfig();
 		_configStore.Save(_config);
-		if (_config.DebuffEnabled && _config.TargetWords.Count == 0)
-		{
-			MessageBox.Show(this, "主词条检测开启时，请先添加至少一个目标词条。", "缺少目标词条", MessageBoxButton.OK, MessageBoxImage.Exclamation);
-			return;
-		}
 		_automationCts = new CancellationTokenSource();
 		_automationSuccessStop = false;
+		_outerOpeningRapidAdvanceCompleted = false;
+		_outerBottomReturnRapidSequenceCompleted = false;
 		SetAutomationButtonsEnabled(enabled: false);
 		_lastSafeInvestmentPoint = null;
 		_blockedHitThisCycle = false;
@@ -1594,6 +2657,12 @@ public partial class MainWindow : Window, IComponentConnector
 		try
 		{
 			await runtime.RunAsync(_automationCts.Token);
+			if (_automationSuccessStop)
+			{
+				AppendLog("自动流程：成功停止。");
+				SetStatus("状态：成功停止");
+				ShowSuccessFeedback("成功刷出目标词条或投资词条！");
+			}
 		}
 		catch (OperationCanceledException)
 		{
@@ -1601,7 +2670,7 @@ public partial class MainWindow : Window, IComponentConnector
 			SetStatus(_automationSuccessStop ? "状态：成功停止" : "状态：已停止");
 			if (_automationSuccessStop)
 			{
-				MessageBox.Show(this, "成功刷出目标词条或投资词条！", "成功", MessageBoxButton.OK, MessageBoxImage.Asterisk);
+				ShowSuccessFeedback("成功刷出目标词条或投资词条！");
 			}
 		}
 		catch (Exception ex2)
@@ -1634,6 +2703,70 @@ public partial class MainWindow : Window, IComponentConnector
 		StopAutomation();
 	}
 
+	private void ShowSuccessFeedback(string message)
+	{
+		PlaySuccessAudio();
+		MessageBox.Show(this, message, "成功", MessageBoxButton.OK, MessageBoxImage.Asterisk);
+	}
+
+	private void InitializeSuccessAudio()
+	{
+		if (_successAudioInitialized)
+		{
+			return;
+		}
+		string audioPath = Path.Combine(AppContext.BaseDirectory, "Assets", "Audio", "success.mp3");
+		if (!File.Exists(audioPath))
+		{
+			AppendLog("成功提示音文件不存在：" + audioPath);
+			return;
+		}
+		_successAudioInitialized = true;
+		_successAudioPlayer.MediaOpened += delegate
+		{
+			_successAudioReady = true;
+			AppendLog("成功提示音：已预加载。");
+			if (_successAudioPlayPending)
+			{
+				_successAudioPlayPending = false;
+				PlaySuccessAudio();
+			}
+		};
+		_successAudioPlayer.MediaFailed += delegate(object? sender, ExceptionEventArgs args)
+		{
+			_successAudioReady = false;
+			_successAudioPlayPending = false;
+			AppendLog("成功提示音加载失败：" + args.ErrorException.Message);
+		};
+		_successAudioPlayer.Open(new Uri(audioPath, UriKind.Absolute));
+	}
+
+	private void PlaySuccessAudio()
+	{
+		if (!_successAudioInitialized)
+		{
+			InitializeSuccessAudio();
+		}
+		try
+		{
+			if (!_successAudioReady)
+			{
+				_successAudioPlayPending = true;
+				AppendLog("成功提示音：等待音频加载完成后播放。");
+				return;
+			}
+			_successAudioPlayer.Stop();
+			_successAudioPlayer.Position = TimeSpan.Zero;
+			_successAudioPlayer.Volume = 1.0;
+			_successAudioPlayer.Play();
+			AppendLog("成功提示音：已播放。");
+		}
+		catch (Exception ex)
+		{
+			AppendLog("成功提示音播放失败：" + ex.Message);
+		}
+	}
+
 	private void ResolveInvestmentHit(string hitWord)
 	{
 		AppendLog("自动流程：投资词条命中：" + hitWord + "，停止。");
@@ -1645,13 +2778,48 @@ public partial class MainWindow : Window, IComponentConnector
 	{
 		if (step == CurrencyWarsFlow.Steps[0])
 		{
+			await RestartOcrAtSafePointIfDueAsync("局外循环", cancellationToken);
 			_blockedHitThisCycle = false;
+			_outerOpeningRapidAdvanceCompleted = false;
+			_outerBottomReturnRapidSequenceCompleted = false;
 		}
 		if ((object)_gameWindow == null && !TryFindWindow())
 		{
 			throw new InvalidOperationException("没有可用的游戏窗口。");
 		}
 		_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
+		if (step == CurrencyWarsFlow.Steps[0])
+		{
+			await RapidAdvanceOpeningPagesAsync("自动流程", cancellationToken);
+			_outerOpeningRapidAdvanceCompleted = true;
+			return;
+		}
+		if (_outerOpeningRapidAdvanceCompleted && step == CurrencyWarsFlow.Steps[1])
+		{
+			AppendLog("自动流程：进入标准博弈已由前三页固定连点完成，跳过本步 OCR。");
+			return;
+		}
+		if (_outerOpeningRapidAdvanceCompleted && step == CurrencyWarsFlow.Steps[2])
+		{
+			AppendLog("自动流程：开始对局已由前三页固定连点完成，直接开始主词条 OCR。");
+			if (_config.DebuffEnabled)
+			{
+				await WaitForDebuffResultAsync(cancellationToken);
+			}
+			return;
+		}
+		if (step == CurrencyWarsFlow.Steps[10])
+		{
+			await ClickBottomReturnSequenceWhenNextDetectedAsync("自动流程", step.Aliases, step.TimeoutSeconds, cancellationToken);
+			await EnsureReturnedToCurrencyWarsAsync("自动流程", cancellationToken);
+			_outerBottomReturnRapidSequenceCompleted = true;
+			return;
+		}
+		if (_outerBottomReturnRapidSequenceCompleted && (step == CurrencyWarsFlow.Steps[11] || step == CurrencyWarsFlow.Steps[12]))
+		{
+			AppendLog("自动流程：" + step.Name + " 已由识别“下一步”后的固定连点完成，跳过等待和 OCR。");
+			return;
+		}
 		switch (step.Kind)
 		{
 		case FlowStepKind.ClickText:
@@ -1664,6 +2832,11 @@ public partial class MainWindow : Window, IComponentConnector
 			break;
 		case FlowStepKind.ClickRelativePoint:
 			await ClickRatioPointAsync(step.ClickPoint ?? new RatioPoint(0.5, 0.5), step.Name, cancellationToken);
+			if (string.Equals(step.Name, "固定确认", StringComparison.Ordinal))
+			{
+				AppendLog("自动流程：固定确认完成，执行旧版蓝海二段点位 2 轮兜底。");
+				await ClickBlueOceanFollowupGuardAsync(cancellationToken);
+			}
 			break;
 		case FlowStepKind.SafeInvestmentChoice:
 			await ClickSafeInvestmentAsync(rememberChoice: true, useConfiguredInvestmentTargetsForBlacklist: false, cancellationToken);
@@ -1695,19 +2868,46 @@ public partial class MainWindow : Window, IComponentConnector
 		{
 			throw new InvalidOperationException("没有可用的游戏窗口。");
 		}
+		await WaitForOpeningBoardReadyAsync("自动流程：退出结算前", 0.0, cancellationToken);
 		await ClickEscAndSettlementPointsAsync(cancellationToken);
 	}
 
 	private async Task ClickEscAndSettlementPointsAsync(CancellationToken cancellationToken)
 	{
-		AppendLog($"自动流程：直接交替点击左上角退出和放弃并结算，各 {7} 次。");
-		for (int i = 0; i < 7; i++)
+		AppendLog("自动流程：点击左上角退出，并等待识别“放弃并结算”。");
+		DateTime deadline = DateTime.UtcNow.AddSeconds(CurrencyWarsFlow.SettlementPageWaitTimeoutSeconds);
+		string lastText = "";
+		int exitClickCount = 0;
+		while (DateTime.UtcNow < deadline)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
-			await ClickRatioPointAsync(CurrencyWarsFlow.FastEscApproxPoint, $"左上角退出区域 第 {i + 1} 次", cancellationToken);
-			await DelayWithCancellationAsync(0.11, cancellationToken);
-			await ClickRatioPointAsync(CurrencyWarsFlow.FastSettlementApproxPoint, $"放弃并结算区域 第 {i + 1} 次", cancellationToken);
-			await DelayWithCancellationAsync(0.11, cancellationToken);
+			if (exitClickCount > 0)
+			{
+				OcrScanResult scan = await CaptureAndOcrAsync(CurrencyWarsFlow.FullWindow, cancellationToken);
+				lastText = scan.RawText;
+				OcrClickCandidate candidate = OcrClickResolver.FindBest(scan, CurrencyWarsFlow.SettlementDialogAliases, _config.ButtonFuzzyScore);
+				if ((object)candidate != null && (object)_latestCaptureScreenRegion != null)
+				{
+					if (await ClickTextUntilPageChangesAsync("自动流程：放弃并结算", candidate, CurrencyWarsFlow.SettlementDialogAliases, CurrencyWarsFlow.FullWindow, null, cancellationToken))
+					{
+						AppendLog($"自动流程：退出确认页已识别、点击并确认切换（匹配 {candidate.Alias}）。");
+						return;
+					}
+					AppendLog("自动流程：放弃并结算点击后确认页仍存在，继续检测。");
+				}
+			}
+			exitClickCount++;
+			await ClickRatioPointAsync(CurrencyWarsFlow.FastEscApproxPoint, $"左上角退出区域 第 {exitClickCount} 次", cancellationToken);
+			await DelayWithCancellationAsync(CurrencyWarsFlow.MajorPageScanIntervalSeconds, cancellationToken);
+		}
+		AppendLog("自动流程：退出确认页识别超时，执行原固定坐标兜底。最后 OCR：" + ShortText(lastText));
+		for (int i = 0; i < CurrencyWarsFlow.FastExitSettlementAlternateClickCount; i++)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			await ClickRatioPointAsync(CurrencyWarsFlow.FastEscApproxPoint, $"左上角退出区域兜底 第 {i + 1} 次", cancellationToken);
+			await DelayWithCancellationAsync(CurrencyWarsFlow.FastExitProbeIntervalSeconds, cancellationToken);
+			await ClickRatioPointAsync(CurrencyWarsFlow.FastSettlementApproxPoint, $"放弃并结算区域兜底 第 {i + 1} 次", cancellationToken);
+			await DelayWithCancellationAsync(CurrencyWarsFlow.FastExitProbeIntervalSeconds, cancellationToken);
 		}
 	}
 
@@ -1724,35 +2924,172 @@ public partial class MainWindow : Window, IComponentConnector
 			OcrClickCandidate candidate = OcrClickResolver.FindBest(scan, step.Aliases, _config.ButtonFuzzyScore);
 			if ((object)candidate != null && (object)_latestCaptureScreenRegion != null)
 			{
-				Rect bounds = candidate.Item.Bounds;
-				int clickX = _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0);
-				int clickY = _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0);
-				if (useBottomReturnPoint && (object)_gameWindow != null)
+				RatioPoint? fixedClickPoint = useBottomReturnPoint ? new RatioPoint(0.5, 0.829) : null;
+				if (await ClickTextUntilPageChangesAsync(step.Name, candidate, GetPostClickVerificationAliases(step.Name, step.Aliases), step.SearchRegion, fixedClickPoint, cancellationToken))
 				{
-					WindowClientRect rect = _gameWindow.ClientRect;
-					clickX = rect.Left + (int)Math.Round((double)rect.Width * 0.5);
-					clickY = rect.Top + (int)Math.Round((double)rect.Height * 0.829);
+					SetStatus("状态：已点击 " + step.Name);
+					return;
 				}
-				ClickRequest request = new ClickRequest(step.Name + "：" + candidate.Item.Text, clickX, clickY);
-				await ExecuteClickAsync(request);
-				SetStatus("状态：已点击 " + step.Name);
-				return;
+				AppendLog("自动流程：" + step.Name + " 点击后原按钮仍存在，继续在超时时间内重试。");
 			}
 			await DelayWithCancellationAsync(useBottomReturnPoint ? 0.15 : 0.6, cancellationToken);
 		}
 		if ((object)step.FallbackPoint != null)
 		{
 			AppendLog("自动流程：" + step.Name + " OCR 未命中，使用兜底坐标。最后 OCR：" + ShortText(lastText));
-			await ClickRatioPointAsync(step.FallbackPoint, step.Name + " 兜底", cancellationToken);
+			bool fallbackSucceeded = await ClickFixedPointUntilPageChangesAsync(step.Name + " 兜底", step.FallbackPoint, GetPostClickVerificationAliases(step.Name, step.Aliases), step.SearchRegion, cancellationToken);
+			if (!fallbackSucceeded && GetExpectedPostClickAliases(step.Name).Count > 0)
+			{
+				throw new InvalidOperationException("自动流程：" + step.Name + " 兜底点击后没有识别到目标下一页，已停止继续执行，避免跳错步骤。");
+			}
 			return;
 		}
 		if (useBottomReturnPoint)
 		{
 			AppendLog("自动流程：" + step.Name + " OCR 未命中，使用底部固定坐标。最后 OCR：" + ShortText(lastText));
-			await ClickRatioPointAsync(new RatioPoint(0.5, 0.829), step.Name + " 固定坐标兜底", cancellationToken);
+			await ClickFixedPointUntilPageChangesAsync(step.Name + " 固定坐标兜底", new RatioPoint(0.5, 0.829), GetPostClickVerificationAliases(step.Name, step.Aliases), step.SearchRegion, cancellationToken);
 			return;
 		}
 		throw new InvalidOperationException("超时：没有找到按钮文字“" + step.Name + "”。最后 OCR：" + ShortText(lastText));
+	}
+
+	private async Task<bool> ClickTextUntilPageChangesAsync(string scope, OcrClickCandidate initialCandidate, IReadOnlyList<string> verificationAliases, RatioRegion verificationRegion, RatioPoint? fixedClickPoint, CancellationToken cancellationToken)
+	{
+		OcrClickCandidate candidate = initialCandidate;
+		IReadOnlyList<string> expectedAliases = GetExpectedPostClickAliases(scope);
+		for (int attempt = 1; attempt <= 3; attempt++)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			if ((object)fixedClickPoint != null)
+			{
+				await ClickRatioPointAsync(fixedClickPoint, $"{scope} 第 {attempt} 次", cancellationToken);
+			}
+			else
+			{
+				if ((object)_latestCaptureScreenRegion == null)
+				{
+					return false;
+				}
+				Rect bounds = candidate.Item.Bounds;
+				await ExecuteClickAsync(new ClickRequest($"{scope}：{candidate.Item.Text} 第 {attempt} 次", _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0), _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0)));
+			}
+			await DelayWithCancellationAsync(0.8, cancellationToken);
+			if (expectedAliases.Count > 0)
+			{
+				if (await WaitForExpectedPageAfterClickAsync(scope, expectedAliases, cancellationToken))
+				{
+					return true;
+				}
+				OcrScanResult currentPageScan = await CaptureAndOcrAsync(verificationRegion, cancellationToken);
+				OcrClickCandidate currentPageCandidate = OcrClickResolver.FindBest(currentPageScan, verificationAliases, _config.ButtonFuzzyScore);
+				if ((object)currentPageCandidate == null)
+				{
+					AppendLog($"{scope}：旧按钮虽已消失，但目标下一页仍未出现；交回外层重新识别当前页面，不提前进入下一步。");
+					return false;
+				}
+				candidate = currentPageCandidate;
+				AppendLog($"{scope}：目标下一页未出现，且仍识别到 {currentPageCandidate.Item.Text}（匹配 {currentPageCandidate.Alias}），准备重试本步骤。");
+				continue;
+			}
+			OcrScanResult verificationScan = await CaptureAndOcrAsync(verificationRegion, cancellationToken);
+			OcrClickCandidate remaining = OcrClickResolver.FindBest(verificationScan, verificationAliases, _config.ButtonFuzzyScore);
+			if ((object)remaining == null)
+			{
+				AppendLog($"{scope}：点击后原按钮已消失，确认页面已切换。");
+				return true;
+			}
+			candidate = remaining;
+			AppendLog($"{scope}：点击后仍识别到 {remaining.Item.Text}（匹配 {remaining.Alias}），准备重试。");
+		}
+		return false;
+	}
+
+	private async Task<bool> ClickFixedPointUntilPageChangesAsync(string scope, RatioPoint point, IReadOnlyList<string> currentPageAliases, RatioRegion verificationRegion, CancellationToken cancellationToken)
+	{
+		IReadOnlyList<string> expectedAliases = GetExpectedPostClickAliases(scope);
+		for (int attempt = 1; attempt <= 3; attempt++)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			await ClickRatioPointAsync(point, $"{scope} 第 {attempt} 次", cancellationToken);
+			await DelayWithCancellationAsync(0.8, cancellationToken);
+			if (expectedAliases.Count > 0)
+			{
+				if (await WaitForExpectedPageAfterClickAsync(scope, expectedAliases, cancellationToken))
+				{
+					return true;
+				}
+				OcrScanResult currentPageScan = await CaptureAndOcrAsync(verificationRegion, cancellationToken);
+				OcrClickCandidate currentPageCandidate = OcrClickResolver.FindBest(currentPageScan, currentPageAliases, _config.ButtonFuzzyScore);
+				if ((object)currentPageCandidate != null)
+				{
+					AppendLog($"{scope}：目标下一页未出现，但已识别到本步骤按钮 {currentPageCandidate.Item.Text}，继续点击同一固定点位。");
+				}
+				else
+				{
+					AppendLog($"{scope}：目标下一页尚未出现，继续用同一固定点位恢复当前步骤，不提前进入下一步。");
+				}
+				continue;
+			}
+			OcrScanResult scan = await CaptureAndOcrAsync(verificationRegion, cancellationToken);
+			OcrClickCandidate remaining = OcrClickResolver.FindBest(scan, currentPageAliases, _config.ButtonFuzzyScore);
+			if ((object)remaining == null)
+			{
+				AppendLog(scope + "：原页面特征已消失，确认页面已切换。");
+				return true;
+			}
+			AppendLog($"{scope}：原页面仍存在（{remaining.Item.Text}），准备重试。");
+		}
+		AppendLog(scope + "：连续 3 次点击后原页面仍存在，交回外层流程继续判断。");
+		return false;
+	}
+
+	private async Task<bool> WaitForExpectedPageAfterClickAsync(string scope, IReadOnlyList<string> expectedAliases, CancellationToken cancellationToken)
+	{
+		DateTime deadline = DateTime.UtcNow.AddSeconds(4.0);
+		string lastText = "";
+		while (DateTime.UtcNow < deadline)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			OcrScanResult scan = await CaptureAndOcrAsync(CurrencyWarsFlow.FullWindow, cancellationToken);
+			lastText = scan.RawText;
+			OcrClickCandidate expected = OcrClickResolver.FindBest(scan, expectedAliases, _config.ButtonFuzzyScore);
+			if ((object)expected != null)
+			{
+				AppendLog($"{scope}：已确认进入目标下一页：{expected.Item.Text}（匹配 {expected.Alias}）。");
+				return true;
+			}
+			await DelayWithCancellationAsync(0.35, cancellationToken);
+		}
+		AppendLog($"{scope}：等待目标下一页超时，期望特征：{string.Join("、", expectedAliases)}。最后 OCR：" + ShortText(lastText));
+		return false;
+	}
+
+	private static IReadOnlyList<string> GetPostClickVerificationAliases(string name, IReadOnlyList<string> fallbackAliases)
+	{
+		switch (name)
+		{
+		case "开始「货币战争」":
+			return new string[1] { "开始货币战争" };
+		case "进入标准博弈":
+			return new string[2] { "进入标准博弈", "开始标准博弈" };
+		case "开始对局":
+			return new string[1] { "开始对局" };
+		default:
+			return fallbackAliases;
+		}
+	}
+
+	private static IReadOnlyList<string> GetExpectedPostClickAliases(string name)
+	{
+		if (name.Contains("开始「货币战争」", StringComparison.Ordinal))
+		{
+			return new string[4] { "进入标准博弈", "零和博弈", "创业指南", "晋升等级" };
+		}
+		if (name.Contains("进入标准博弈", StringComparison.Ordinal))
+		{
+			return new string[1] { "开始对局" };
+		}
+		return System.Array.Empty<string>();
 	}
 
 	private static bool IsBottomReturnFlowStep(FlowStep step)
@@ -1864,12 +3201,13 @@ public partial class MainWindow : Window, IComponentConnector
 			}
 		}
 		await ClickSafeInvestmentAsync(rememberChoice: false, useConfiguredInvestmentTargetsForBlacklist: true, cancellationToken);
-		await ClickBlueOceanFollowupGuardAsync(cancellationToken);
 	}
 
 	private async Task<string?> TryClickInvestmentTargetAsync(string scope, CancellationToken cancellationToken, bool logRawText = false)
 	{
 		AppendLog($"自动流程：{scope}开始，固定扫描 {CurrencyWarsFlow.InvestmentScanAttemptCount} 次。");
+		OcrClickCandidate? bestCandidate = null;
+		int bestPriority = int.MaxValue;
 		for (int attempt = 1; attempt <= CurrencyWarsFlow.InvestmentScanAttemptCount; attempt++)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
@@ -1880,58 +3218,142 @@ public partial class MainWindow : Window, IComponentConnector
 			{
 				AppendLog($"自动流程：{scope} 第 {attempt} 次 OCR 原文：{ShortText(scan.RawText)}");
 			}
-			OcrClickCandidate candidate = OcrClickResolver.FindBest(scan, _config.InvestmentTargets, _config.InvestmentFuzzyScore);
-			if ((object)candidate != null && (object)_latestCaptureScreenRegion != null)
+			OcrClickCandidate? candidate = OcrClickResolver.FindByPriority(scan, _config.InvestmentTargets, _config.InvestmentFuzzyScore);
+			if (candidate != null)
 			{
-				Rect bounds = candidate.Item.Bounds;
-				await ExecuteClickAsync(new ClickRequest("投资词条：" + candidate.Item.Text, _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0), _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0)));
-				return candidate.Alias;
+				int priority = GetAliasPriority(_config.InvestmentTargets, candidate.Alias);
+				if (priority < bestPriority)
+				{
+					bestCandidate = candidate;
+					bestPriority = priority;
+				}
+				if (bestPriority == 0)
+				{
+					break;
+				}
 			}
 			if (attempt < CurrencyWarsFlow.InvestmentScanAttemptCount)
 			{
 				await DelayWithCancellationAsync(0.1, cancellationToken);
 			}
 		}
+		if (bestCandidate != null && _latestCaptureScreenRegion != null)
+		{
+			Rect bounds = bestCandidate.Item.Bounds;
+			await ExecuteClickAsync(new ClickRequest("投资词条：" + bestCandidate.Item.Text, _latestCaptureScreenRegion.Left + (int)Math.Round(bounds.X + bounds.Width / 2.0), _latestCaptureScreenRegion.Top + (int)Math.Round(bounds.Y + bounds.Height / 2.0)));
+			AppendLog($"自动流程：{scope}按优先级选择第 {bestPriority + 1} 项：{bestCandidate.Alias}。");
+			return bestCandidate.Alias;
+		}
 		AppendLog("自动流程：" + scope + "结束，未命中投资词条。");
 		return null;
 	}
 
-	private async Task ClickSafeInvestmentAsync(bool rememberChoice, bool useConfiguredInvestmentTargetsForBlacklist, CancellationToken cancellationToken)
+	private static int GetAliasPriority(IReadOnlyList<string> aliases, string alias)
 	{
-		RatioPoint point = ChooseSafeInvestmentPoint(await CaptureAndOcrAsync(CurrencyWarsFlow.TopHalf, cancellationToken), useConfiguredInvestmentTargetsForBlacklist);
-		if (rememberChoice)
+		for (int index = 0; index < aliases.Count; index++)
 		{
-			_lastSafeInvestmentPoint = point;
+			if (string.Equals(aliases[index].Trim(), alias.Trim(), StringComparison.OrdinalIgnoreCase))
+			{
+				return index;
+			}
 		}
-		await ClickRatioPointAsync(point, "默认安全投资", cancellationToken);
+		return int.MaxValue;
 	}
 
-	private async Task ClickBlueOceanFollowupGuardAsync(CancellationToken cancellationToken)
-	{
-		await DelayWithCancellationAsync(0.3, cancellationToken);
-		for (int i = 0; i < 4; i++)
-		{
-			await ClickRatioPointAsync(new RatioPoint(0.52, 0.49), $"蓝海二次投资中间选项兜底 {i + 1}/4", cancellationToken);
-			await DelayWithCancellationAsync(0.1, cancellationToken);
-			await ClickRatioPointAsync(new RatioPoint(0.565, 0.91), $"蓝海二次投资确认兜底 {i + 1}/4", cancellationToken);
-			await DelayWithCancellationAsync(0.1, cancellationToken);
-		}
-	}
-
-	private RatioPoint ChooseSafeInvestmentPoint(OcrScanResult scan, bool useConfiguredInvestmentTargetsForBlacklist)
+	private async Task ClickSafeInvestmentAsync(bool rememberChoice, bool useConfiguredInvestmentTargetsForBlacklist, CancellationToken cancellationToken, int blacklistScanAttempts = 1)
 	{
 		List<string> activeTargets = (useConfiguredInvestmentTargetsForBlacklist ? _config.InvestmentTargets : new List<string>());
-		HashSet<int> blockedColumns = FindBlacklistedInvestmentColumns(scan, activeTargets);
-		int chosenIndex = new int[3] { 1, 0, 2 }.FirstOrDefault((int index) => !blockedColumns.Contains(index));
-		if (blockedColumns.Contains(chosenIndex))
+		HashSet<int> blockedColumns = new HashSet<int>();
+		int attempts = Math.Max(1, blacklistScanAttempts);
+		for (int attempt = 1; attempt <= attempts; attempt++)
 		{
-			chosenIndex = 1;
+			cancellationToken.ThrowIfCancellationRequested();
+			OcrScanResult scan = await CaptureAndOcrAsync(CurrencyWarsFlow.TopHalf, cancellationToken);
+			blockedColumns.UnionWith(FindBlacklistedInvestmentColumns(scan, activeTargets));
+			if (attempts > 1)
+			{
+				AppendLog($"默认投资选择：黑名单保护扫描 {attempt}/{attempts}，已发现列：{(blockedColumns.Count == 0 ? "无" : string.Join("、", blockedColumns.OrderBy((int index) => index).Select((int index) => index + 1)))}。");
+			}
+			if (attempt < attempts)
+			{
+				await DelayWithCancellationAsync(0.1, cancellationToken);
+			}
 		}
 		if (blockedColumns.Count > 0)
 		{
 			AppendLog("默认投资选择：避开特殊投资列 " + string.Join("、", blockedColumns.Select((int index) => index + 1)));
 		}
-		return CurrencyWarsFlow.InvestmentFallbackPoints[chosenIndex];
+		int? uncollectedColumn = FindUncollectedInvestmentColumn(blockedColumns, cancellationToken);
+		int chosenIndex = uncollectedColumn ?? ChooseSafeInvestmentIndex(blockedColumns);
+		RatioPoint point = CurrencyWarsFlow.InvestmentFallbackPoints[chosenIndex];
+		if (rememberChoice)
+		{
+			_lastSafeInvestmentPoint = point;
+		}
+		string reason = (uncollectedColumn.HasValue ? $"图鉴未收录投资 {chosenIndex + 1}" : "默认安全投资");
+		await ClickRatioPointAsync(point, reason, cancellationToken);
+	}
+
+	private async Task ClickBlueOceanFollowupGuardAsync(CancellationToken cancellationToken)
+	{
+		await DelayWithCancellationAsync(0.3, cancellationToken);
+		for (int i = 0; i < 2; i++)
+		{
+			await ClickRatioPointAsync(new RatioPoint(0.52, 0.49), $"蓝海二次投资中间选项兜底 {i + 1}/2", cancellationToken);
+			await DelayWithCancellationAsync(0.1, cancellationToken);
+			await ClickRatioPointAsync(new RatioPoint(0.565, 0.91), $"蓝海二次投资确认兜底 {i + 1}/2", cancellationToken);
+			await DelayWithCancellationAsync(0.1, cancellationToken);
+		}
+	}
+
+	private int? FindUncollectedInvestmentColumn(HashSet<int> blockedColumns, CancellationToken cancellationToken)
+	{
+		if ((object)_gameWindow == null)
+		{
+			return null;
+		}
+		string templatePath = Path.Combine(AppContext.BaseDirectory, "Assets", "Templates", "currency-wars-new.png");
+		if (!File.Exists(templatePath))
+		{
+			AppendLog("默认投资选择：缺少图鉴未收录标识模板，继续默认安全投资。");
+			return null;
+		}
+
+		BitmapImage marker = new BitmapImage();
+		marker.BeginInit();
+		marker.CacheOption = BitmapCacheOption.OnLoad;
+		marker.UriSource = new Uri(templatePath, UriKind.Absolute);
+		marker.EndInit();
+		marker.Freeze();
+		BitmapSource screenshot = _windowCapture.Capture(_gameWindow, new CaptureRegion("投资图鉴标识", 0.0, 0.0, 1.0, 1.0));
+		IReadOnlyList<StrategyCollectionMarkerMatch> matches = StrategyCollectionMarkerDetector.FindMatches(screenshot, marker, CurrencyWarsFlow.InvestmentCardSearchRegions, cancellationToken);
+		int[] preferredColumns = new int[3] { 1, 0, 2 };
+		foreach (int column in preferredColumns)
+		{
+			if (blockedColumns.Contains(column))
+			{
+				continue;
+			}
+			StrategyCollectionMarkerMatch match = matches.First((StrategyCollectionMarkerMatch item) => item.Column == column);
+			if (match.Score >= CurrencyWarsFlow.InvestmentCollectionMarkerThreshold)
+			{
+				AppendLog($"默认投资选择：检测到第 {column + 1} 张投资卡的图鉴未收录标识（相似度 {match.Score:0.000}），优先选择。");
+				return column;
+			}
+		}
+
+		AppendLog("默认投资选择：未检测到可选的图鉴未收录标识，继续默认安全投资。最高相似度：" + string.Join("、", matches.Select((StrategyCollectionMarkerMatch item) => $"{item.Column + 1}={item.Score:0.000}")) + "。");
+		return null;
+	}
+
+	private static int ChooseSafeInvestmentIndex(HashSet<int> blockedColumns)
+	{
+		int chosenIndex = new int[3] { 1, 0, 2 }.FirstOrDefault((int index) => !blockedColumns.Contains(index));
+		if (blockedColumns.Contains(chosenIndex))
+		{
+			chosenIndex = 1;
+		}
+		return chosenIndex;
 	}
 
 	private HashSet<int> FindBlacklistedInvestmentColumns(OcrScanResult scan, IReadOnlyList<string> activeTargets)
@@ -1978,6 +3400,70 @@ public partial class MainWindow : Window, IComponentConnector
 		await ExecuteClickAsync(request);
 	}
 
+	private async Task<bool> WaitForMajorPageAsync(string scope, IReadOnlyList<string> aliases, RatioRegion region, double timeoutSeconds, double initialDelaySeconds, int fuzzyScore, CancellationToken cancellationToken)
+	{
+		if (initialDelaySeconds > 0.0)
+		{
+			await DelayWithCancellationAsync(initialDelaySeconds, cancellationToken);
+		}
+		AppendLog($"{scope}：开始等待页面识别，特征：{string.Join("、", aliases)}，最长 {timeoutSeconds:0.#} 秒。");
+		DateTime startedAt = DateTime.UtcNow;
+		DateTime deadline = startedAt.AddSeconds(timeoutSeconds);
+		string lastText = "";
+		while (DateTime.UtcNow < deadline)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			OcrScanResult scan = await CaptureAndOcrAsync(region, cancellationToken);
+			lastText = scan.RawText;
+			OcrClickCandidate candidate = OcrClickResolver.FindBest(scan, aliases, fuzzyScore);
+			if ((object)candidate != null)
+			{
+				double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
+				AppendLog($"{scope}：页面已识别：{candidate.Item.Text}（匹配 {candidate.Alias}），等待 {elapsed:0.0} 秒。");
+				return true;
+			}
+			await DelayWithCancellationAsync(CurrencyWarsFlow.MajorPageScanIntervalSeconds, cancellationToken);
+		}
+		AppendLog(scope + "：页面识别等待超时，继续原兜底流程。最后 OCR：" + ShortText(lastText));
+		return false;
+	}
+
+	private async Task<bool> WaitForOpeningBoardReadyAsync(string scope, double postDetectionWaitSeconds, CancellationToken cancellationToken)
+	{
+		await DelayWithCancellationAsync(0.6, cancellationToken);
+		AppendLog($"{scope}：开始等待局内棋盘/备战页，最长 {InGameOpeningFlow.OpeningBoardWaitTimeoutSeconds:0.#} 秒。");
+		DateTime startedAt = DateTime.UtcNow;
+		DateTime deadline = startedAt.AddSeconds(InGameOpeningFlow.OpeningBoardWaitTimeoutSeconds);
+		string lastText = "";
+		while (DateTime.UtcNow < deadline)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			OcrScanResult scan = await CaptureAndOcrAsync(CurrencyWarsFlow.FullWindow, cancellationToken);
+			lastText = scan.RawText;
+			if (await TryHandleRoleChoicePopupAsync(scan, cancellationToken))
+			{
+				AppendLog(scope + "：等待棋盘时先处理角色/圣杯选择弹窗。");
+				await DelayWithCancellationAsync(0.5, cancellationToken);
+				continue;
+			}
+			OcrClickCandidate candidate = OcrClickResolver.FindBest(scan, InGameOpeningFlow.OpeningBoardScreenAliases, _config.ButtonFuzzyScore);
+			if ((object)candidate != null)
+			{
+				if (postDetectionWaitSeconds > 0.0)
+				{
+					AppendLog($"{scope}：局内棋盘/备战页已识别：{candidate.Item.Text}（匹配 {candidate.Alias}），识别后再等待 {postDetectionWaitSeconds:0.0} 秒加载拖拽区域。");
+					await DelayWithCancellationAsync(postDetectionWaitSeconds, cancellationToken);
+				}
+				double totalWait = (DateTime.UtcNow - startedAt).TotalSeconds;
+				AppendLog($"{scope}：局内棋盘/备战页准备完成，总等待 {totalWait:0.0} 秒。");
+				return true;
+			}
+			await DelayWithCancellationAsync(CurrencyWarsFlow.MajorPageScanIntervalSeconds, cancellationToken);
+		}
+		AppendLog(scope + "：局内棋盘/备战页等待超时，继续原兜底流程。最后 OCR：" + ShortText(lastText));
+		return false;
+	}
+
 	private async Task<OcrScanResult> CaptureAndOcrAsync(RatioRegion region, CancellationToken cancellationToken)
 	{
 		if ((object)_gameWindow == null)
@@ -1991,11 +3477,27 @@ public partial class MainWindow : Window, IComponentConnector
 		_latestPreviewRegion = captureRegion;
 		PreviewImage.Source = image;
 		PreviewPlaceholder.Visibility = Visibility.Collapsed;
-		CaptureInfoText.Text = $"截图：自动流程区域  {resolved.Width}x{resolved.Height}  left={resolved.Left}, top={resolved.Top}";
+		CaptureInfoText.Text = $"截图：自动流程区域  {resolved.Width}x{resolved.Height}  left={resolved.Left}, top={resolved.Top}  后端={_windowCapture.LastCaptureBackend}";
 		OcrScanResult scan = (_latestOcrResult = await _ocrService.RecognizeAsync(image, cancellationToken));
 		OcrRawTextBox.Text = FormatOcrResult(captureRegion.Name, scan);
 		OcrInfoText.Text = $"OCR：自动流程区域，文本块 {scan.Items.Count}，字符 {scan.RawText.Length}";
 		return scan;
+	}
+
+	private async Task RestartOcrAtSafePointIfDueAsync(string scope, CancellationToken cancellationToken)
+	{
+		if (_ocrService is not ExternalRapidOcrService rapidOcr
+			|| !rapidOcr.IsMaintenanceRestartDue(OcrMaintenanceRestartInterval))
+		{
+			return;
+		}
+		AppendLog($"{scope}：OCR 常驻进程已运行 90 分钟，本轮已回到安全位置，等待 2 秒后执行维护重启。");
+		await DelayWithCancellationAsync(2.0, cancellationToken);
+		if (await rapidOcr.RestartForMaintenanceIfDueAsync(OcrMaintenanceRestartInterval, cancellationToken))
+		{
+			AppendLog($"{scope}：OCR 常驻进程维护重启完成；下一次识别时会自动重新加载模型。");
+			await DelayWithCancellationAsync(1.0, cancellationToken);
+		}
 	}
 
 	private static bool IsDebuffScreenReady(string ocrText)
@@ -2082,7 +3584,7 @@ public partial class MainWindow : Window, IComponentConnector
 
 	private static IOcrService CreateOcrService()
 	{
-		string bridgeExe = Path.Combine(AppContext.BaseDirectory, "OCRRuntime", "rapidocr_bridge.exe");
+		string bridgeExe = Path.Combine(AppContext.BaseDirectory, "OCRRuntime", "rapidocr_bridge", "rapidocr_bridge.exe");
 		if (File.Exists(bridgeExe))
 		{
 			return new ExternalRapidOcrService(bridgeExe);
@@ -2123,14 +3625,35 @@ public partial class MainWindow : Window, IComponentConnector
 	{
 		string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
 		LogBox.AppendText(line + Environment.NewLine);
+		_logLineCount++;
+		TrimLogBox();
 		LogBox.ScrollToEnd();
 		_gameLogOverlay.AppendLog(line);
 	}
 
 	private void AppendStartupNotice()
 	{
-		LogBox.AppendText("      ========================================================\r\n      ||                                                  ||\r\n      ||       本工具为开源免费项目，没有任何收费，如果您是付费获得此款产品请立即退款        ||\r\n      ||                                                  ||\r\n      ========================================================\r\n");
+		const string notice = "      ========================================================\r\n      ||                                                  ||\r\n      ||       本工具为开源免费项目，没有任何收费，如果您是付费获得此款产品请立即退款        ||\r\n      ||                                                  ||\r\n      ========================================================\r\n";
+		LogBox.AppendText(notice);
+		_logLineCount += notice.Count(character => character == '\n');
 		LogBox.ScrollToEnd();
+	}
+
+	private void TrimLogBox()
+	{
+		int linesToRemove = _logLineCount - MaxLogLines;
+		if (linesToRemove <= 0)
+		{
+			return;
+		}
+		int firstKeptCharacter = LogBox.GetCharacterIndexFromLineIndex(linesToRemove);
+		if (firstKeptCharacter <= 0)
+		{
+			return;
+		}
+		LogBox.Text = LogBox.Text.Substring(firstKeptCharacter);
+		_logLineCount -= linesToRemove;
+		LogBox.CaretIndex = LogBox.Text.Length;
 	}
 
 	private void GameLogOverlayTimer_Tick(object? sender, EventArgs e)

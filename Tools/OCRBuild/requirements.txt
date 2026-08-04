@@ -1,0 +1,11 @@
+numpy==2.5.1
+onnxruntime==1.28.0
+opencv-python==5.0.0.93
+pillow==12.3.0
+pyclipper==1.4.0
+PyInstaller==6.21.0
+PyYAML==6.0.3
+rapidocr-onnxruntime==1.3.25
+shapely==2.1.2
+six==1.17.0
+tqdm==4.70.0

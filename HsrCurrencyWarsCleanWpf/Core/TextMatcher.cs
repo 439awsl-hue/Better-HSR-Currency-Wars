@@ -8,6 +8,8 @@ namespace HsrCurrencyWarsCleanWpf.Core;
 
 public static class TextMatcher
 {
+	private static readonly string[] PlaneStrengtheningPrefixes = new string[3] { "第一位面", "第二位面", "第三位面" };
+
 	public static string Normalize(string? text)
 	{
 		if (string.IsNullOrWhiteSpace(text))
@@ -56,6 +58,40 @@ public static class TextMatcher
 			}
 		}
 		return new MatchResult(hitWords, missingWords);
+	}
+
+	public static MatchResult MatchDebuffTargets(IEnumerable<string> targetWords, string ocrText, int fuzzyScore)
+	{
+		List<string> hitWords = new List<string>();
+		List<string> missingWords = new List<string>();
+		foreach (string word in targetWords)
+		{
+			if (FuzzyContainsDebuffTarget(ocrText, word, fuzzyScore))
+			{
+				hitWords.Add(word);
+			}
+			else
+			{
+				missingWords.Add(word);
+			}
+		}
+		return new MatchResult(hitWords, missingWords);
+	}
+
+	private static bool FuzzyContainsDebuffTarget(string text, string target, int score)
+	{
+		string normalizedTarget = Normalize(target);
+		string expectedPrefix = PlaneStrengtheningPrefixes.FirstOrDefault((string prefix) => normalizedTarget == prefix + "强化");
+		if (expectedPrefix == null)
+		{
+			return FuzzyContains(text, target, score);
+		}
+		string normalizedText = Normalize(text);
+		if (!normalizedText.Contains(expectedPrefix, StringComparison.Ordinal))
+		{
+			return false;
+		}
+		return FuzzyContains(text, target, score);
 	}
 
 	private static IEnumerable<string> TextWindows(string text, int targetLength)

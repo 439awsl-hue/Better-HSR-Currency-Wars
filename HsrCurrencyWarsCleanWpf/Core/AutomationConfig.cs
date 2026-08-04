@@ -18,6 +18,8 @@ public sealed class AutomationConfig
 
 	public string WindowTitle { get; set; } = "";
 
+	public string HiddenReleaseNotesVersion { get; set; } = "";
+
 	public bool DebuffEnabled { get; set; } = true;
 
 	public bool DebuffMatchAny { get; set; }
@@ -42,6 +44,34 @@ public sealed class AutomationConfig
 
 	public List<string> InGameInvestmentTargets { get; set; } = new List<string>();
 
+	public bool CombinedDebuffEnabled { get; set; } = true;
+
+	public bool CombinedDebuffMatchAny { get; set; }
+
+	public List<string> CombinedTargetWords { get; set; } = new List<string>();
+
+	public bool CombinedBlockedEnabled { get; set; }
+
+	public List<string> CombinedBlockedWords { get; set; } = new List<string>();
+
+	public bool CombinedCheckInvestmentWhenBlocked { get; set; }
+
+	public List<string> CombinedInvestmentTargets { get; set; } = new List<string>();
+
+	public List<string> CombinedInGameStrategyTargets { get; set; } = new List<string>();
+
+	public List<string> CombinedInGameInvestmentTargets { get; set; } = new List<string>();
+
+	public CombinedMainRule CombinedMainRule { get; set; } = CombinedMainRule.StopOnMatch;
+
+	public CombinedBlockedRule CombinedBlockedRule { get; set; } = CombinedBlockedRule.RestartOnMatch;
+
+	public CombinedOuterInvestmentRule CombinedOuterInvestmentRule { get; set; } = CombinedOuterInvestmentRule.StopOnMatch;
+
+	public CombinedInGameInvestmentRule CombinedInGameInvestmentRule { get; set; } = CombinedInGameInvestmentRule.RequireThenContinue;
+
+	public bool CombinedFlowRulesConfigured { get; set; }
+
 	public List<string> TargetWordHistory { get; set; } = new List<string>();
 
 	public List<string> BlockedWordHistory { get; set; } = new List<string>();
@@ -52,7 +82,19 @@ public sealed class AutomationConfig
 
 	public List<string> InGameInvestmentHistory { get; set; } = new List<string>();
 
-	public int FuzzyScore { get; set; } = 82;
+	public List<string> CombinedTargetWordHistory { get; set; } = new List<string>();
+
+	public List<string> CombinedBlockedWordHistory { get; set; } = new List<string>();
+
+	public List<string> CombinedInvestmentWordHistory { get; set; } = new List<string>();
+
+	public List<string> CombinedInGameStrategyHistory { get; set; } = new List<string>();
+
+	public List<string> CombinedInGameInvestmentHistory { get; set; } = new List<string>();
+
+	public int FuzzyScore { get; set; } = 85;
+
+	public int BlockedFuzzyScore { get; set; } = 85;
 
 	public int ButtonFuzzyScore { get; set; } = 78;
 
@@ -67,12 +109,35 @@ public sealed class AutomationConfig
 	public void Normalize()
 	{
 		InvestmentEnabled = true;
+		FuzzyScore = Math.Max(FuzzyScore, 85);
+		BlockedFuzzyScore = Math.Max(BlockedFuzzyScore, 85);
+		if (!CombinedFlowRulesConfigured)
+		{
+			CombinedMainRule = CombinedDebuffEnabled ? CombinedMainRule.StopOnMatch : CombinedMainRule.Ignore;
+			CombinedBlockedRule = CombinedBlockedEnabled ? CombinedBlockedRule.RestartOnMatch : CombinedBlockedRule.Ignore;
+			CombinedOuterInvestmentRule = CombinedInvestmentTargets.Count > 0
+				? CombinedOuterInvestmentRule.StopOnMatch
+				: (CombinedInGameInvestmentTargets.Count > 0 ? CombinedOuterInvestmentRule.RequireThenContinue : CombinedOuterInvestmentRule.Ignore);
+			CombinedInGameInvestmentRule = CombinedInGameInvestmentTargets.Count > 0 ? CombinedInGameInvestmentRule.RequireThenContinue : CombinedInGameInvestmentRule.Ignore;
+			CombinedFlowRulesConfigured = true;
+		}
+		CombinedDebuffEnabled = CombinedMainRule != CombinedMainRule.Ignore;
+		CombinedBlockedEnabled = CombinedBlockedRule != CombinedBlockedRule.Ignore;
+		CombinedCheckInvestmentWhenBlocked = CombinedBlockedRule == CombinedBlockedRule.ContinueOnMatch;
 		int targetLimit = (DebuffMatchAny ? 20 : 4);
 		TargetWords = NormalizeWords(TargetWords, targetLimit);
 		BlockedWords = NormalizeWords(BlockedWords, 20);
 		InvestmentTargets = NormalizeWords(InvestmentTargets, 20);
 		InGameStrategyTargets = NormalizeWords(InGameStrategyTargets, 20);
 		InGameInvestmentTargets = NormalizeWords(InGameInvestmentTargets, 20);
+		int combinedTargetLimit = (CombinedDebuffMatchAny ? 20 : 4);
+		CombinedTargetWords = NormalizeWords(CombinedTargetWords, combinedTargetLimit);
+		CombinedBlockedWords = NormalizeWords(CombinedBlockedWords, 20);
+		CombinedInvestmentTargets = NormalizeWords(CombinedInvestmentTargets, 20);
+		CombinedInGameStrategyTargets = NormalizeWords(CombinedInGameStrategyTargets, 20);
+		CombinedInGameInvestmentTargets = NormalizeWords(CombinedInGameInvestmentTargets, 20);
+		CombinedInvestmentTargets = NormalizeWords(CombinedInvestmentTargets.Concat(CombinedInGameInvestmentTargets), 20);
+		CombinedInGameInvestmentTargets = CombinedInvestmentTargets.ToList();
 		if (InGameStrategyTargets.Count == 0 && !string.IsNullOrWhiteSpace(InGameStrategyTarget))
 		{
 			InGameStrategyTargets = NormalizeWords(new _003C_003Ez__ReadOnlySingleElementList<string>(InGameStrategyTarget), 20);
@@ -88,6 +153,11 @@ public sealed class AutomationConfig
 		InvestmentWordHistory = MergeHistory(InvestmentTargets, InvestmentWordHistory);
 		InGameStrategyHistory = MergeHistory(InGameStrategyTargets, InGameStrategyHistory);
 		InGameInvestmentHistory = MergeHistory(InGameInvestmentTargets, InGameInvestmentHistory);
+		CombinedTargetWordHistory = MergeHistory(CombinedTargetWords, CombinedTargetWordHistory);
+		CombinedBlockedWordHistory = MergeHistory(CombinedBlockedWords, CombinedBlockedWordHistory);
+		CombinedInvestmentWordHistory = MergeHistory(CombinedInvestmentTargets, CombinedInGameInvestmentHistory, CombinedInvestmentWordHistory);
+		CombinedInGameStrategyHistory = MergeHistory(CombinedInGameStrategyTargets, CombinedInGameStrategyHistory);
+		CombinedInGameInvestmentHistory = CombinedInvestmentWordHistory.ToList();
 	}
 
 	private static List<string> NormalizeWords(IEnumerable<string>? words, int maxCount)

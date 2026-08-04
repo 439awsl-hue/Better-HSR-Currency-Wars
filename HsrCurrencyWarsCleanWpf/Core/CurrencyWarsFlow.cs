@@ -18,7 +18,19 @@ public static class CurrencyWarsFlow
 
 	public static readonly RatioPoint FastSettlementApproxPoint = new RatioPoint(0.39, 0.69);
 
+	public static readonly RatioPoint OpeningRapidAdvancePoint = new RatioPoint(1660.0 / 1920.0, 965.0 / 1080.0);
+
+	public const double OpeningRapidAdvanceDurationSeconds = 3.5;
+
+	public const double OpeningRapidAdvanceClickIntervalSeconds = 0.3;
+
 	public static readonly string[] DebuffScreenHints = new string[5] { "敌人难度", "下一步", "随从强化", "沉重脚步", "变宝为废" };
+
+	public static readonly string[] InvestmentEntryScreenAliases = new string[1] { "投资环境" };
+
+	public static readonly string[] InvestmentChoiceScreenAliases = new string[1] { "剩余次数" };
+
+	public static readonly string[] SettlementDialogAliases = new string[3] { "放弃并结算", "放弃", "结算" };
 
 	public static readonly string[] SpecialInvestmentBlacklist = new string[8] { "蓝海", "蓝嗨", "蓝烸", "蓝塰", "特邀专家：银狼", "专家研讨会", "特邀专家：加拉赫", "特邀专家：停云" };
 
@@ -28,6 +40,15 @@ public static class CurrencyWarsFlow
 		new RatioPoint(0.5, 0.38),
 		new RatioPoint(0.77, 0.38)
 	};
+
+	public static readonly RatioRegion[] InvestmentCardSearchRegions = new RatioRegion[3]
+	{
+		new RatioRegion(202.0 / 1920.0, 195.0 / 1080.0, 470.0 / 1920.0, 672.0 / 1080.0),
+		new RatioRegion(725.0 / 1920.0, 196.0 / 1080.0, 468.0 / 1920.0, 670.0 / 1080.0),
+		new RatioRegion(1247.0 / 1920.0, 198.0 / 1080.0, 465.0 / 1920.0, 668.0 / 1080.0)
+	};
+
+	public const double InvestmentCollectionMarkerThreshold = 0.9;
 
 	public const double DebuffRecheckTimeoutSeconds = 3.0;
 
@@ -41,6 +62,14 @@ public static class CurrencyWarsFlow
 
 	public const int FastExitSettlementAlternateClickCount = 7;
 
+	public const int BottomReturnFixedClickCount = 6;
+
+	public const double MajorPageScanIntervalSeconds = 0.6;
+
+	public const double InvestmentPageWaitTimeoutSeconds = 20.0;
+
+	public const double SettlementPageWaitTimeoutSeconds = 20.0;
+
 	public static readonly IReadOnlyList<FlowStep> Steps = new global::_003C_003Ez__ReadOnlyArray<FlowStep>(new FlowStep[13]
 	{
 		new FlowStep
@@ -51,7 +80,7 @@ public static class CurrencyWarsFlow
 			TimeoutSeconds = 8.0,
 			SearchRegion = RightBottom,
 			FallbackPoint = new RatioPoint(0.82, 0.91),
-			StandardDelayAfterSeconds = 0.8
+			StandardDelayAfterSeconds = 0.0
 		},
 		new FlowStep
 		{
@@ -61,7 +90,7 @@ public static class CurrencyWarsFlow
 			TimeoutSeconds = 12.0,
 			SearchRegion = RightBottom,
 			FallbackPoint = new RatioPoint(0.82, 0.9),
-			StandardDelayAfterSeconds = 0.7
+			StandardDelayAfterSeconds = 0.0
 		},
 		new FlowStep
 		{
@@ -70,7 +99,7 @@ public static class CurrencyWarsFlow
 			Aliases = new global::_003C_003Ez__ReadOnlyArray<string>(new string[2] { "开始对局", "对局" }),
 			TimeoutSeconds = 8.0,
 			CheckDebuffAfterStep = true,
-			StandardDelayAfterSeconds = 0.6
+			StandardDelayAfterSeconds = 0.0
 		},
 		new FlowStep
 		{
@@ -131,7 +160,7 @@ public static class CurrencyWarsFlow
 			Name = "下一步",
 			Aliases = new _003C_003Ez__ReadOnlySingleElementList<string>("下一步"),
 			TimeoutSeconds = 8.0,
-			StandardDelayAfterSeconds = 0.3
+			StandardDelayAfterSeconds = 0.0
 		},
 		new FlowStep
 		{
@@ -139,7 +168,7 @@ public static class CurrencyWarsFlow
 			Name = "下一页",
 			Aliases = new _003C_003Ez__ReadOnlySingleElementList<string>("下一页"),
 			TimeoutSeconds = 8.0,
-			StandardDelayAfterSeconds = 0.3
+			StandardDelayAfterSeconds = 0.0
 		},
 		new FlowStep
 		{
@@ -147,7 +176,7 @@ public static class CurrencyWarsFlow
 			Name = "返回货币战争",
 			Aliases = new global::_003C_003Ez__ReadOnlyArray<string>(new string[2] { "返回货币战争", "返回" }),
 			TimeoutSeconds = 8.0,
-			StandardDelayAfterSeconds = 0.5
+			StandardDelayAfterSeconds = 0.0
 		}
 	});
 }

@@ -1,9 +1,8 @@
 import json
 import sys
+from io import BytesIO
 from pathlib import Path
 
-if hasattr(sys.stdin, "reconfigure"):
-    sys.stdin.reconfigure(encoding="utf-8")
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -30,8 +29,8 @@ def bounds_from_points(points):
     }
 
 
-def recognize(ocr, image_path):
-    result, _elapsed = ocr(str(image_path))
+def recognize(ocr, image):
+    result, _elapsed = ocr(image)
     items = []
     raw_lines = []
     for row in result or []:
@@ -52,21 +51,52 @@ def recognize(ocr, image_path):
     return {"raw_text": "\n".join(raw_lines), "items": items}
 
 
+def read_exact(stream, length):
+    chunks = []
+    remaining = length
+    while remaining > 0:
+        chunk = stream.read(remaining)
+        if not chunk:
+            raise EOFError(f"image stream ended early: expected {length} bytes")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def decode_image(image_bytes):
+    import numpy as np
+    from PIL import Image
+
+    with Image.open(BytesIO(image_bytes)) as image:
+        rgb = image.convert("RGB")
+        # rapidocr_onnxruntime 接收 ndarray 时沿用 OpenCV 的 BGR 通道顺序。
+        return np.asarray(rgb)[:, :, ::-1].copy()
+
+
 def run_server():
     from rapidocr_onnxruntime import RapidOCR
 
     ocr = RapidOCR()
-    for line in sys.stdin:
-        line = line.strip().lstrip("\ufeff")
-        if not line:
+    input_stream = sys.stdin.buffer
+    while True:
+        header_line = input_stream.readline()
+        if not header_line:
+            break
+        header_line = header_line.strip().lstrip(b"\xef\xbb\xbf")
+        if not header_line:
             continue
         try:
-            request = json.loads(line)
-            image_path = Path(request.get("image_path", ""))
-            if not image_path.exists():
-                response = {"raw_text": "", "items": [], "error": "image not found"}
+            request = json.loads(header_line.decode("utf-8"))
+            if request.get("command") == "shutdown":
+                print(json.dumps({"ok": True}, ensure_ascii=False), flush=True)
+                break
+
+            image_size = int(request.get("image_size", 0))
+            if image_size <= 0:
+                response = {"raw_text": "", "items": [], "error": "missing image bytes"}
             else:
-                response = recognize(ocr, image_path)
+                image_bytes = read_exact(input_stream, image_size)
+                response = recognize(ocr, decode_image(image_bytes))
             print(json.dumps(response, ensure_ascii=False), flush=True)
         except Exception as exc:
             print(json.dumps({"raw_text": "", "items": [], "error": str(exc)}, ensure_ascii=False), flush=True)
@@ -89,7 +119,7 @@ def main():
     try:
         from rapidocr_onnxruntime import RapidOCR
 
-        print(json.dumps(recognize(RapidOCR(), image_path), ensure_ascii=False))
+        print(json.dumps(recognize(RapidOCR(), str(image_path)), ensure_ascii=False))
         return 0
     except Exception as exc:
         print(json.dumps({"raw_text": "", "items": [], "error": str(exc)}, ensure_ascii=False))

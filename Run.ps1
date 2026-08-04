@@ -14,8 +14,21 @@ if (-not (Test-Path -LiteralPath $dotnet)) {
 }
 
 if ($Build) {
-    & (Join-Path $PSScriptRoot 'Build.ps1') -Configuration $Configuration
+    $project = Join-Path $PSScriptRoot 'Better HSR-Currency Wars V11.csproj'
+    $env:DOTNET_ROOT = Split-Path -Parent $dotnet
+    $env:DOTNET_CLI_HOME = Join-Path $workspace '.dotnet-home'
+    $env:NUGET_PACKAGES = Join-Path $workspace '.nuget\packages'
+    $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+    & $dotnet build $project -c $Configuration -p:SelfContained=false -p:RuntimeIdentifier= -v minimal
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+$previewOutputDirectory = Join-Path $PSScriptRoot "bin\$Configuration\net10.0-windows"
+$previewDll = Join-Path $previewOutputDirectory 'Better HSR-Currency Wars V11.dll'
+if (Test-Path -LiteralPath $previewDll) {
+    $env:DOTNET_ROOT = Split-Path -Parent $dotnet
+    Start-Process -FilePath $dotnet -ArgumentList @("`"$previewDll`"") -WorkingDirectory $previewOutputDirectory
+    return
 }
 
 $publishDirectory = Join-Path $PSScriptRoot "bin\$Configuration\net10.0-windows\win-x64\publish"

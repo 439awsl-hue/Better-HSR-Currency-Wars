@@ -2,12 +2,13 @@ namespace HsrCurrencyWarsCleanWpf.Core;
 
 public static class InGameOpeningFlow
 {
-	public static readonly RatioPoint[] PrepareSlots = new RatioPoint[4]
+	public static readonly RatioPoint[] PrepareSlots = new RatioPoint[5]
 	{
 		new RatioPoint(0.229, 0.846),
 		new RatioPoint(0.294, 0.845),
 		new RatioPoint(0.359, 0.846),
-		new RatioPoint(0.425, 0.843)
+		new RatioPoint(0.425, 0.843),
+		new RatioPoint(0.489, 0.844)
 	};
 
 	public static readonly RatioPoint[] ForwardSlots = new RatioPoint[4]
@@ -37,6 +38,8 @@ public static class InGameOpeningFlow
 	public static readonly RatioPoint UnderfilledConfirmPoint = new RatioPoint(0.612, 0.622);
 
 	public static readonly RatioRegion BattleButtonRegion = new RatioRegion(0.84, 0.62, 0.16, 0.22);
+
+	public static readonly RatioRegion AutoBattleDisabledIndicatorRegion = new RatioRegion(0.0, 903.0 / 1080.0, 144.0 / 1920.0, 120.0 / 1080.0);
 
 	public static readonly RatioRegion DialogRegion = new RatioRegion(0.2, 0.04, 0.7, 0.65);
 
@@ -70,6 +73,13 @@ public static class InGameOpeningFlow
 		new RatioPoint(0.76, 0.455)
 	};
 
+	public static readonly RatioRegion[] StrategyCardSearchRegions = new RatioRegion[3]
+	{
+		new RatioRegion(202.0 / 1920.0, 195.0 / 1080.0, 470.0 / 1920.0, 672.0 / 1080.0),
+		new RatioRegion(725.0 / 1920.0, 196.0 / 1080.0, 468.0 / 1920.0, 670.0 / 1080.0),
+		new RatioRegion(1247.0 / 1920.0, 198.0 / 1080.0, 465.0 / 1920.0, 668.0 / 1080.0)
+	};
+
 	public static readonly string[] BattleButtonAliases = new string[2] { "出战", "跳过" };
 
 	public static readonly string[] ContinueButtonAliases = new string[6] { "点击空白处继续", "下一步", "下一页", "继续挑战", "前往结算", "确认" };
@@ -100,11 +110,21 @@ public static class InGameOpeningFlow
 
 	public static readonly string[] StrategyScreenAliases = new string[3] { "请选择投资策略", "刷新次数", "返回备战界面" };
 
-	public static readonly string[] StrategyChoiceBlacklist = new string[3] { "远见", "黄金投资", "白银投资" };
+	public static readonly string[] OpeningBoardScreenAliases = new string[2] { "备战阶段", "出战" };
+
+	public static readonly string[] StrategyChoiceBlacklist = new string[4] { "远见", "黄金投资", "白银投资", "轮回不止" };
 
 	public const double DragPauseSeconds = 0.25;
 
 	public const double AfterBattleClickSeconds = 10.0;
+
+	public const double AutoBattleDetectionTimeoutSeconds = 10.0;
+
+	public const int AutoBattleMaxSwitchAttempts = 3;
+
+	public const double AutoBattleDetectionIntervalSeconds = 1.0;
+
+	public const double AutoBattleVerificationDelaySeconds = 1.0;
 
 	public const double AfterBattleRetryWaitSeconds = 6.0;
 
@@ -112,19 +132,25 @@ public static class InGameOpeningFlow
 
 	public const double StrategyScreenDelaySeconds = 10.5;
 
+	public const double OpeningBoardWaitTimeoutSeconds = 30.0;
+
+	public const double OpeningBoardPostDetectionWaitSeconds = 2.0;
+
+	public const double StrategyScreenWaitTimeoutSeconds = 30.0;
+
 	public const double BeforeInGameDeployDelaySeconds = 5.7;
 
 	public const double GalaStarWaitTimeoutSeconds = 1.2;
 
 	public const double GalaStarScanIntervalSeconds = 0.3;
 
-	public const double StrategyRefreshDelaySeconds = 1.0;
+	public const double StrategyRefreshDelaySeconds = 0.5;
 
 	public const int InitialStrategyScanAttemptCount = 2;
 
 	public const int PostRefreshStrategyScanAttemptCount = 1;
 
-	public const int ExtraRightStrategyRefreshCount = 2;
+	public const int ExtraStrategyRefreshCountPerButton = 2;
 
 	public const double StrategyScanIntervalSeconds = 0.1;
 
@@ -142,5 +168,7 @@ public static class InGameOpeningFlow
 
 	public const int PresetInvestmentFuzzyScore = 88;
 
-	public const int StrategyFuzzyScore = 83;
+	public const int StrategyFuzzyScore = 85;
+
+	public const double StrategyCollectionMarkerThreshold = 0.9;
 }
