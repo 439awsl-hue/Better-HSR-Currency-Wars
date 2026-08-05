@@ -26,6 +26,9 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 
 		[JsonPropertyName("error")]
 		public string? Error { get; set; }
+
+		[JsonPropertyName("perf")]
+		public OcrPerfInfo? Perf { get; set; }
 	}
 
 	private sealed class OcrBridgeItem
@@ -55,6 +58,28 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 		public double Height { get; set; }
 	}
 
+	/// <summary>Python 侧返回的性能数据（RAPIDOCR_PRINT_PERF=true 时才有）。</summary>
+	public sealed class OcrPerfInfo
+	{
+		[JsonPropertyName("pre_ms")]
+		public double PreMs { get; set; }
+
+		[JsonPropertyName("ocr_ms")]
+		public double OcrMs { get; set; }
+
+		[JsonPropertyName("image_w")]
+		public int ImageWidth { get; set; }
+
+		[JsonPropertyName("image_h")]
+		public int ImageHeight { get; set; }
+
+		[JsonPropertyName("scale")]
+		public double Scale { get; set; }
+
+		[JsonPropertyName("items")]
+		public int Items { get; set; }
+	}
+
 	private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
 	{
 		PropertyNameCaseInsensitive = true
@@ -72,6 +97,28 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 
 	private DateTime _processStartedAtUtc;
 
+	private readonly object _stderrSync = new object();
+
+	private readonly StringBuilder _recentStderr = new StringBuilder(4096);
+
+	/// <summary>桥接进程 stderr 每一行都会触发此事件（用于把调试信息转发到主程序日志）。</summary>
+	public event Action<string>? StderrMessageReceived;
+
+	/// <summary>最近一次成功识别的 Python 侧性能数据（无 perf 时为 null）。</summary>
+	public OcrPerfInfo? LastPerf { get; private set; }
+
+	/// <summary>最近收集到的桥接进程 stderr 文本（调试用）。</summary>
+	public string RecentStderr
+	{
+		get
+		{
+			lock (_stderrSync)
+			{
+				return _recentStderr.ToString();
+			}
+		}
+	}
+
 	public string Name { get; }
 
 	public ExternalRapidOcrService(string executablePath, string? bridgeScript = null, TimeSpan? timeout = null)
@@ -88,17 +135,25 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 		bool shouldRestartProcess = false;
 		try
 		{
+			LastPerf = null;
 			byte[] imageBytes = EncodePng(image);
 			OcrBridgeResponse response = JsonSerializer.Deserialize<OcrBridgeResponse>(await SendRequestAsync(imageBytes, cancellationToken), JsonOptions);
 			if (response == null || !string.IsNullOrWhiteSpace(response.Error))
 			{
 				throw new InvalidOperationException(response?.Error ?? "OCR 返回为空。");
 			}
+			LastPerf = response.Perf;
 			List<OcrTextItem> items = (from item in response.Items
 				select new OcrTextItem(item.Text ?? "", new Rect(item.Bounds.X, item.Bounds.Y, item.Bounds.Width, item.Bounds.Height), item.Confidence) into item
 				where !string.IsNullOrWhiteSpace(item.Text)
 				select item).ToList();
 			return new OcrScanResult(response.RawText ?? "", items, DateTime.Now);
+		}
+		catch (IOException)
+		{
+			// 管道已断开（桥接进程可能启动时崩溃），标记重启以便下一次调用自动拉起
+			shouldRestartProcess = true;
+			throw;
 		}
 		catch (OperationCanceledException)
 		{
@@ -260,12 +315,28 @@ public sealed class ExternalRapidOcrService : IOcrService, IDisposable
 		}
 	}
 
-	private static async Task DrainStandardErrorAsync(Process process)
+	private async Task DrainStandardErrorAsync(Process process)
 	{
 		try
 		{
-			while (await process.StandardError.ReadLineAsync() != null)
+			while (true)
 			{
+				string? line = await process.StandardError.ReadLineAsync();
+				if (line == null)
+				{
+					break;
+				}
+				lock (_stderrSync)
+				{
+					_recentStderr.AppendLine(line);
+					if (_recentStderr.Length > 8192)
+					{
+						string tail = _recentStderr.ToString();
+						_recentStderr.Clear();
+						_recentStderr.Append(tail, tail.Length - 4096, 4096);
+					}
+				}
+				StderrMessageReceived?.Invoke(line);
 			}
 		}
 		catch
