@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -81,7 +82,11 @@ public partial class MainWindow : Window, IComponentConnector
 
 	private readonly ScanEvaluator _scanEvaluator = new ScanEvaluator();
 
+	private readonly OcrResultCache _ocrResultCache = new OcrResultCache(capacity: 16);
+
 	private readonly IClickService _clickService = new MouseClickService();
+
+	private StreamWriter? _logFileWriter;
 
 	private AutomationConfig _config = new AutomationConfig();
 
@@ -134,10 +139,25 @@ public partial class MainWindow : Window, IComponentConnector
 		LoadConfigToUi();
 		InitializeFlowList();
 		AppendStartupNotice();
+		InitializeLaunchLogFile();
 		AppendLog("程序已启动。");
 		AppendLog("配置文件：" + _configStore.ConfigPath);
 		AppendLog("第 6 阶段已启用：完整自动刷新闭环，返回货币战争后继续循环。");
 		AppendLog("OCR 状态：" + _ocrService.Name);
+		if (_ocrService is ExternalRapidOcrService rapidOcrService)
+		{
+			rapidOcrService.StderrMessageReceived += delegate(string line)
+			{
+				if (string.IsNullOrWhiteSpace(line))
+				{
+					return;
+				}
+				Dispatcher.BeginInvoke(new Action(delegate
+				{
+					AppendLog("[OCR 桥接] " + line);
+				}));
+			};
+		}
 		AppendLog("点击/按键语义对齐旧 Python 稳定版：流程中直接执行输入。");
 		InitializeSuccessAudio();
 		SetStatus("状态：未运行");
@@ -186,6 +206,15 @@ public partial class MainWindow : Window, IComponentConnector
 		_gameLogOverlay.Close();
 		UnregisterHotkeys();
 		_successAudioPlayer.Close();
+		try
+		{
+			_logFileWriter?.Flush();
+			_logFileWriter?.Dispose();
+			_logFileWriter = null;
+		}
+		catch
+		{
+		}
 		if (_ocrService is IDisposable disposable)
 		{
 			disposable.Dispose();
@@ -3478,9 +3507,34 @@ public partial class MainWindow : Window, IComponentConnector
 		PreviewImage.Source = image;
 		PreviewPlaceholder.Visibility = Visibility.Collapsed;
 		CaptureInfoText.Text = $"截图：自动流程区域  {resolved.Width}x{resolved.Height}  left={resolved.Left}, top={resolved.Top}  后端={_windowCapture.LastCaptureBackend}";
-		OcrScanResult scan = (_latestOcrResult = await _ocrService.RecognizeAsync(image, cancellationToken));
+
+		// —— 内存缓存：同一区域画面未变化时直接复用上次 OCR 结果，降低 OCR 频率与系统负荷 ——
+		OcrResultCache.Key cacheKey = new OcrResultCache.Key(resolved.Left, resolved.Top, resolved.Width, resolved.Height, OcrResultCache.ComputeFingerprint(image));
+		OcrScanResult scan;
+		string resultSuffix = "";
+		if (_ocrResultCache.TryGet(cacheKey, out OcrScanResult? cached) && cached != null)
+		{
+			scan = cached;
+			resultSuffix = "（缓存命中，未执行 OCR）";
+			AppendLog($"[OCR 缓存] 命中：{captureRegion.Name} 画面未变化，跳过识别，当前缓存 {_ocrResultCache.Count} 条。");
+		}
+		else
+		{
+			Stopwatch stopwatch = Stopwatch.StartNew();
+			scan = await _ocrService.RecognizeAsync(image, cancellationToken);
+			stopwatch.Stop();
+			_ocrResultCache.Add(cacheKey, scan);
+			string perfText = "";
+			if (_ocrService is ExternalRapidOcrService rapidOcr && rapidOcr.LastPerf != null)
+			{
+				ExternalRapidOcrService.OcrPerfInfo perf = rapidOcr.LastPerf;
+				perfText = $" Python:pre={perf.PreMs:0.#}ms ocr={perf.OcrMs:0.#}ms 原图={perf.ImageWidth}x{perf.ImageHeight} 缩放={perf.Scale:0.###}";
+			}
+			AppendLog($"OCR 完成：{captureRegion.Name}，总耗时 {stopwatch.ElapsedMilliseconds} ms，文本块 {scan.Items.Count}，字符 {scan.RawText.Length}{perfText}。缓存 {_ocrResultCache.Count} 条。");
+		}
+		_latestOcrResult = scan;
 		OcrRawTextBox.Text = FormatOcrResult(captureRegion.Name, scan);
-		OcrInfoText.Text = $"OCR：自动流程区域，文本块 {scan.Items.Count}，字符 {scan.RawText.Length}";
+		OcrInfoText.Text = $"OCR：自动流程区域，文本块 {scan.Items.Count}，字符 {scan.RawText.Length}{resultSuffix}";
 		return scan;
 	}
 
@@ -3629,6 +3683,17 @@ public partial class MainWindow : Window, IComponentConnector
 		TrimLogBox();
 		LogBox.ScrollToEnd();
 		_gameLogOverlay.AppendLog(line);
+		if (_logFileWriter != null)
+		{
+			try
+			{
+				_logFileWriter.WriteLine(line);
+				_logFileWriter.Flush();
+			}
+			catch
+			{
+			}
+		}
 	}
 
 	private void AppendStartupNotice()
@@ -3637,6 +3702,42 @@ public partial class MainWindow : Window, IComponentConnector
 		LogBox.AppendText(notice);
 		_logLineCount += notice.Count(character => character == '\n');
 		LogBox.ScrollToEnd();
+	}
+
+	/// <summary>
+	/// 仅当通过「启动 V11.cmd」启动时（环境变量 HSR_APP_LOG_DIR 由该脚本设置），
+	/// 在项目根目录 log 文件夹中创建一个带启动时间戳的独立日志文件。
+	/// 直接运行编译后的 exe 不会设置该环境变量，因此不会产生日志文件。
+	/// </summary>
+	private void InitializeLaunchLogFile()
+	{
+		string? logDir = Environment.GetEnvironmentVariable("HSR_APP_LOG_DIR");
+		if (string.IsNullOrWhiteSpace(logDir))
+		{
+			return;
+		}
+		try
+		{
+			Directory.CreateDirectory(logDir);
+			string baseName = "启动V11-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+			string logPath = Path.Combine(logDir, baseName + ".log");
+			int suffix = 2;
+			while (File.Exists(logPath))
+			{
+				logPath = Path.Combine(logDir, baseName + "-" + suffix + ".log");
+				suffix++;
+			}
+			_logFileWriter = new StreamWriter(logPath, append: false, new UTF8Encoding(false));
+			_logFileWriter.WriteLine("=== Better HSR Currency Wars 启动日志 ===");
+			_logFileWriter.WriteLine("=== 启动时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " ===");
+			_logFileWriter.WriteLine("=== 日志文件：" + logPath + " ===");
+			_logFileWriter.Flush();
+			AppendLog("“启动V11”调试日志已写入：" + logPath);
+		}
+		catch (Exception ex)
+		{
+			AppendLog("启动日志文件创建失败：" + ex.Message);
+		}
 	}
 
 	private void TrimLogBox()
