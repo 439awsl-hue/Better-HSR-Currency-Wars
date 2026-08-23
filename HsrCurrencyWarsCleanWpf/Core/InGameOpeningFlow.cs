@@ -1,4 +1,4 @@
-namespace HsrCurrencyWarsCleanWpf.Core;
+﻿namespace HsrCurrencyWarsCleanWpf.Core;
 
 public static class InGameOpeningFlow
 {
@@ -39,7 +39,9 @@ public static class InGameOpeningFlow
 
 	public static readonly RatioRegion BattleButtonRegion = new RatioRegion(0.84, 0.62, 0.16, 0.22);
 
-	public static readonly RatioRegion AutoBattleDisabledIndicatorRegion = new RatioRegion(0.0, 903.0 / 1080.0, 144.0 / 1920.0, 120.0 / 1080.0);
+	public static readonly RatioRegion ContinueChallengeRegion = new RatioRegion(0.25, 0.72, 0.5, 0.28);
+
+	public static readonly RatioRegion AutoBattleDisabledIndicatorRegion = UiCoordinates.From1080(0, 903, 144, 120);
 
 	public static readonly RatioRegion DialogRegion = new RatioRegion(0.2, 0.04, 0.7, 0.65);
 
@@ -75,14 +77,16 @@ public static class InGameOpeningFlow
 
 	public static readonly RatioRegion[] StrategyCardSearchRegions = new RatioRegion[3]
 	{
-		new RatioRegion(202.0 / 1920.0, 195.0 / 1080.0, 470.0 / 1920.0, 672.0 / 1080.0),
-		new RatioRegion(725.0 / 1920.0, 196.0 / 1080.0, 468.0 / 1920.0, 670.0 / 1080.0),
-		new RatioRegion(1247.0 / 1920.0, 198.0 / 1080.0, 465.0 / 1920.0, 668.0 / 1080.0)
+		UiCoordinates.From1080(202, 195, 470, 672),
+		UiCoordinates.From1080(725, 196, 468, 670),
+		UiCoordinates.From1080(1247, 198, 465, 668)
 	};
 
 	public static readonly string[] BattleButtonAliases = new string[2] { "出战", "跳过" };
 
 	public static readonly string[] ContinueButtonAliases = new string[6] { "点击空白处继续", "下一步", "下一页", "继续挑战", "前往结算", "确认" };
+
+	public static readonly string[] ContinueChallengeAliases = new string[2] { "继续挑战", "继续" };
 
 	public static readonly string[] TargetStrategyAliases = new string[1] { "本姑娘就是罗刹" };
 

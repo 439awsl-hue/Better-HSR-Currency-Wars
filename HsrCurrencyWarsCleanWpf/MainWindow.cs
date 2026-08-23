@@ -1530,7 +1530,9 @@ public partial class MainWindow : Window, IComponentConnector
 		}
 		_gameWindow = _windowCapture.FindWindow(_config.WindowTitle);
 		WindowClientRect rect = _gameWindow.ClientRect;
-		DragRequest request = new DragRequest(reason, rect.Left + (int)Math.Round((double)rect.Width * start.X), rect.Top + (int)Math.Round((double)rect.Height * start.Y), rect.Left + (int)Math.Round((double)rect.Width * end.X), rect.Top + (int)Math.Round((double)rect.Height * end.Y));
+		var mappedStart = UiCoordinates.ToScreen(start, rect);
+		var mappedEnd = UiCoordinates.ToScreen(end, rect);
+		DragRequest request = new DragRequest(reason, mappedStart.X, mappedStart.Y, mappedEnd.X, mappedEnd.Y);
 		AppendLog((await _clickService.DragAsync(request, _gameWindow.Handle, cancellationToken)).Message);
 	}
 
@@ -2457,7 +2459,8 @@ public partial class MainWindow : Window, IComponentConnector
 			throw new InvalidOperationException("没有可用的游戏窗口。");
 		}
 		WindowClientRect rect = _gameWindow.ClientRect;
-		ClickRequest request = new ClickRequest(reason, rect.Left + (int)Math.Round((double)rect.Width * point.X), rect.Top + (int)Math.Round((double)rect.Height * point.Y));
+		var mapped = UiCoordinates.ToScreen(point, rect);
+		ClickRequest request = new ClickRequest(reason, mapped.X, mapped.Y);
 		await ExecuteRepeatedClickAsync(request, count, intervalSeconds, cancellationToken);
 	}
 
@@ -3548,7 +3551,8 @@ public partial class MainWindow : Window, IComponentConnector
 			throw new InvalidOperationException("没有可用的游戏窗口。");
 		}
 		WindowClientRect rect = _gameWindow.ClientRect;
-		ClickRequest request = new ClickRequest(reason, rect.Left + (int)Math.Round((double)rect.Width * point.X), rect.Top + (int)Math.Round((double)rect.Height * point.Y));
+		var mapped = UiCoordinates.ToScreen(point, rect);
+		ClickRequest request = new ClickRequest(reason, mapped.X, mapped.Y);
 		await ExecuteClickAsync(request);
 	}
 
