@@ -192,6 +192,42 @@
           </Trigger>
         </Style.Triggers>
       </Style>
+      <Style x:Key="ToggleSwitch" TargetType="{x:Type CheckBox}">
+        <Setter Property="FrameworkElement.Cursor" Value="Hand" />
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="{x:Type CheckBox}">
+              <StackPanel Orientation="Horizontal" Background="Transparent">
+                <Border Name="Track" Width="44" Height="24" CornerRadius="12" Background="#C7D5E4" VerticalAlignment="Center">
+                  <Canvas Width="44" Height="24">
+                    <Ellipse Name="Thumb" Width="18" Height="18" Fill="#FFFFFF" Canvas.Left="3" Canvas.Top="3">
+                      <Ellipse.Effect>
+                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Opacity="0.22" Color="#40566F" />
+                      </Ellipse.Effect>
+                    </Ellipse>
+                  </Canvas>
+                </Border>
+                <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
+              </StackPanel>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="Track" Property="Background" Value="{StaticResource PrimaryBrush}" />
+                  <Setter TargetName="Thumb" Property="Canvas.Left" Value="23" />
+                </Trigger>
+                <Trigger Property="UIElement.IsMouseOver" Value="True">
+                  <Setter TargetName="Track" Property="UIElement.Opacity" Value="0.92" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="UIElement.Opacity" Value="0.55" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
       <Style x:Key="NavButton" TargetType="{x:Type Button}">
         <Setter Property="Height" Value="46" />
         <Setter Property="Margin" Value="0,0,0,10" />
@@ -531,7 +567,7 @@
             </GroupBox>
             <GroupBox Header="投资识别" Grid.Column="2" Margin="0,0,0,12">
               <StackPanel>
-                <CheckBox Name="InvestmentEnabledBox" Content="开启投资识别" IsChecked="True" IsHitTestVisible="False" Focusable="False" Margin="0,0,0,10" />
+                <CheckBox Name="InvestmentEnabledBox" Style="{StaticResource ToggleSwitch}" Content="开启局外投资识别" IsChecked="True" Margin="0,0,0,10" Checked="InvestmentEnabled_Changed" Unchecked="InvestmentEnabled_Changed" />
                 <CheckBox Name="CheckInvestmentWhenBlockedBox" Content="命中不想要词条后仍检查投资" Margin="0,0,0,10" Checked="CheckInvestmentWhenBlocked_Changed" Unchecked="CheckInvestmentWhenBlocked_Changed" />
                 <Grid Margin="0,0,0,8">
                   <Grid.ColumnDefinitions>
@@ -587,7 +623,7 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <CheckBox Grid.Row="0" Content="开启投资识别" IsChecked="True" IsHitTestVisible="False" Focusable="False" VerticalAlignment="Center" />
+                <CheckBox Name="InGameInvestmentEnabledBox" Style="{StaticResource ToggleSwitch}" Grid.Row="0" Content="开启局内投资识别" IsChecked="True" VerticalAlignment="Center" Checked="InvestmentEnabled_Changed" Unchecked="InvestmentEnabled_Changed" />
                 <Grid Row="1">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -1067,7 +1103,7 @@
                       <TextBlock Text="OCR 识别为空：先点“测试全窗口 OCR”看截图是否正常；如果截图正常但文字为空，检查 OCRRuntime 是否完整。" Style="{StaticResource HelpBodyText}" />
                       <TextBlock Text="OCR 识别不准：请保持 16:9，推荐 1920x1080 分辨率；关闭 HDR、滤镜、缩放叠加层，并确认游戏语言是简体中文。" Style="{StaticResource HelpBodyText}" />
                       <TextBlock Text="自动点击不对：先停止流程；如果移动过游戏窗口，请按一次“测试全窗口 OCR”重新定位，再继续运行。" Style="{StaticResource HelpBodyText}" />
-                      <TextBlock Text="移动鼠标失败：可能是工具没有以管理员身份运行。请关闭工具，然后右键选择“以管理员身份运行”。" Style="{StaticResource HelpBodyText}" />
+                      <TextBlock Text="模拟点击失败：远程桌面/桌面分身已改为绝对坐标模拟点击与拖拽，不再依赖真实光标移动。若仍失败，请确认游戏窗口在前台，必要时以管理员身份运行。" Style="{StaticResource HelpBodyText}" />
                       <TextBlock Text="卡在蓝海或特邀专家阶段：请检查“投资识别”是否打开。无论是否进行投资目标判断，都建议保持开启。" Style="{StaticResource HelpBodyText}" />
                       <TextBlock Text="检查更新失败：可能是网络或 GitHub Pages 暂时不可访问，稍后再试即可。" Style="{StaticResource HelpBodyText}" />
                       <TextBlock Text="无法停止：优先按 F8；如果窗口失去焦点，可切回工具后点击“停止 F8”。" Style="{StaticResource HelpBodyText}" />

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace HsrCurrencyWarsCleanWpf.Core;
 
@@ -10,6 +10,10 @@ public static class CurrencyWarsFlow
 
 	public static readonly RatioRegion BottomHalf = new RatioRegion(0.0, 0.5, 1.0, 0.5);
 
+	public static readonly RatioRegion BottomNextButtonRegion = new RatioRegion(0.55, 0.82, 0.45, 0.18);
+
+	public static readonly RatioRegion SettlementDialogButtonRegion = new RatioRegion(0.25, 0.45, 0.5, 0.35);
+
 	public static readonly RatioRegion LeftBottom = new RatioRegion(0.0, 0.5, 0.5, 0.5);
 
 	public static readonly RatioRegion RightBottom = new RatioRegion(0.5, 0.5, 0.5, 0.5);
@@ -18,7 +22,8 @@ public static class CurrencyWarsFlow
 
 	public static readonly RatioPoint FastSettlementApproxPoint = new RatioPoint(0.39, 0.69);
 
-	public static readonly RatioPoint OpeningRapidAdvancePoint = new RatioPoint(1660.0 / 1920.0, 965.0 / 1080.0);
+	// 1080p 基准像素；1x/1.5x/2x 等客户区按 UiCoordinates 倍率映射
+	public static readonly RatioPoint OpeningRapidAdvancePoint = UiCoordinates.From1080(1660, 965);
 
 	public const double OpeningRapidAdvanceDurationSeconds = 3.5;
 
@@ -43,9 +48,9 @@ public static class CurrencyWarsFlow
 
 	public static readonly RatioRegion[] InvestmentCardSearchRegions = new RatioRegion[3]
 	{
-		new RatioRegion(202.0 / 1920.0, 195.0 / 1080.0, 470.0 / 1920.0, 672.0 / 1080.0),
-		new RatioRegion(725.0 / 1920.0, 196.0 / 1080.0, 468.0 / 1920.0, 670.0 / 1080.0),
-		new RatioRegion(1247.0 / 1920.0, 198.0 / 1080.0, 465.0 / 1920.0, 668.0 / 1080.0)
+		UiCoordinates.From1080(202, 195, 470, 672),
+		UiCoordinates.From1080(725, 196, 468, 670),
+		UiCoordinates.From1080(1247, 198, 465, 668)
 	};
 
 	public const double InvestmentCollectionMarkerThreshold = 0.9;

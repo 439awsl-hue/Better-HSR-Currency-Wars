@@ -6,6 +6,8 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
+using HsrCurrencyWarsCleanWpf.Core;
+
 namespace HsrCurrencyWarsCleanWpf.Services;
 
 public sealed class WindowCaptureService
@@ -162,11 +164,8 @@ public sealed class WindowCaptureService
 
 	public WindowClientRect ResolveRegion(WindowClientRect rect, CaptureRegion region)
 	{
-		int left = rect.Left + (int)Math.Round((double)rect.Width * region.X);
-		int top = rect.Top + (int)Math.Round((double)rect.Height * region.Y);
-		int width = Math.Max(1, (int)Math.Round((double)rect.Width * region.Width));
-		int height = Math.Max(1, (int)Math.Round((double)rect.Height * region.Height));
-		return new WindowClientRect(left, top, width, height);
+		RatioRegion ratio = new RatioRegion(region.X, region.Y, region.Width, region.Height);
+		return UiCoordinates.ToScreenRegion(ratio, rect);
 	}
 
 	private static WindowClientRect GetClientRectOnScreen(nint handle)

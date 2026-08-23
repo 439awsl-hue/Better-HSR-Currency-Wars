@@ -38,6 +38,8 @@ public sealed class AutomationConfig
 
 	public bool CheckInvestmentWhenBlocked { get; set; }
 
+	public bool InGameInvestmentEnabled { get; set; } = true;
+
 	public string InGameStrategyTarget { get; set; } = "";
 
 	public string InGameInvestmentTarget { get; set; } = "";
@@ -110,7 +112,6 @@ public sealed class AutomationConfig
 
 	public void Normalize()
 	{
-		InvestmentEnabled = true;
 		FuzzyScore = Math.Max(FuzzyScore, 85);
 		BlockedFuzzyScore = Math.Max(BlockedFuzzyScore, 85);
 		if (!CombinedFlowRulesConfigured)
