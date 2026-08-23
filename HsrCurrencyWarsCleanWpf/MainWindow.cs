@@ -701,7 +701,9 @@ public partial class MainWindow : Window, IComponentConnector
 	{
 		ShowLogPage();
 		List<string> strategies = InGameStrategyListBox.Items.OfType<string>().ToList();
-		List<string> investments = InGameInvestmentListBox.Items.OfType<string>().ToList();
+		List<string> investments = InGameInvestmentEnabledBox.IsChecked == true
+			? InGameInvestmentListBox.Items.OfType<string>().ToList()
+			: new List<string>();
 		if (strategies.Count == 0)
 		{
 			MessageBox.Show(this, "请至少添加 1 个局内策略目标。局内投资目标可以留空，留空时会自动选择安全投资并直接进入局内。", "局内自定义", MessageBoxButton.OK, MessageBoxImage.Asterisk);
@@ -1051,6 +1053,22 @@ public partial class MainWindow : Window, IComponentConnector
 		}
 	}
 
+	private void InvestmentEnabled_Changed(object sender, RoutedEventArgs e)
+	{
+		if (!base.IsLoaded)
+		{
+			return;
+		}
+		if (sender == InGameInvestmentEnabledBox)
+		{
+			bool enabled = InGameInvestmentEnabledBox.IsChecked == true;
+			SaveConfigFromUi(enabled ? "局内投资识别已开启。" : "局内投资识别已关闭。");
+			return;
+		}
+		bool outerEnabled = InvestmentEnabledBox.IsChecked == true;
+		SaveConfigFromUi(outerEnabled ? "局外投资识别已开启。" : "局外投资识别已关闭。");
+	}
+
 	private void LoadConfigToUi()
 	{
 		_config = _configStore.Load();
@@ -1060,7 +1078,8 @@ public partial class MainWindow : Window, IComponentConnector
 		SetListBoxItems(TargetWordsListBox, _config.TargetWords);
 		BlockedEnabledBox.IsChecked = _config.BlockedEnabled;
 		SetListBoxItems(BlockedWordsListBox, _config.BlockedWords);
-		InvestmentEnabledBox.IsChecked = true;
+		InvestmentEnabledBox.IsChecked = _config.InvestmentEnabled;
+		InGameInvestmentEnabledBox.IsChecked = _config.InGameInvestmentEnabled;
 		CheckInvestmentWhenBlockedBox.IsChecked = _config.CheckInvestmentWhenBlocked;
 		SetListBoxItems(InvestmentWordsListBox, _config.InvestmentTargets);
 		SetListBoxItems(InGameStrategyListBox, _config.InGameStrategyTargets);
@@ -1091,9 +1110,10 @@ public partial class MainWindow : Window, IComponentConnector
 		_config.TargetWords = ReadWords(TargetWordsListBox);
 		_config.BlockedEnabled = BlockedEnabledBox.IsChecked == true;
 		_config.BlockedWords = ReadWords(BlockedWordsListBox);
-		_config.InvestmentEnabled = true;
+		_config.InvestmentEnabled = InvestmentEnabledBox.IsChecked == true;
 		_config.InvestmentTargets = ReadWords(InvestmentWordsListBox);
 		_config.CheckInvestmentWhenBlocked = CheckInvestmentWhenBlockedBox.IsChecked == true;
+		_config.InGameInvestmentEnabled = InGameInvestmentEnabledBox.IsChecked == true;
 		_config.InGameStrategyTargets = ReadWords(InGameStrategyListBox);
 		_config.InGameInvestmentTargets = ReadWords(InGameInvestmentListBox);
 		_config.CombinedMainRule = GetComboRule(CombinedMainRuleBox, CombinedMainRule.StopOnMatch);
@@ -1666,6 +1686,9 @@ public partial class MainWindow : Window, IComponentConnector
 		}
 		ReadUiToConfig();
 		_configStore.Save(_config);
+		IReadOnlyList<string> effectiveInvestmentGateAliases = _config.InGameInvestmentEnabled
+			? investmentGateAliases
+			: Array.Empty<string>();
 		if ((object)_gameWindow == null && !TryFindWindow())
 		{
 			return;
@@ -1677,7 +1700,7 @@ public partial class MainWindow : Window, IComponentConnector
 		SetStatus("状态：独立局内预设运行中：" + strategyName);
 		try
 		{
-			await RunIndependentStrategyPresetLoopAsync(strategyName, strategyAliases, investmentGateAliases, _automationCts.Token);
+			await RunIndependentStrategyPresetLoopAsync(strategyName, strategyAliases, effectiveInvestmentGateAliases, _automationCts.Token);
 			if (_automationSuccessStop)
 			{
 				AppendLog("独立局内预设：成功停止。");
@@ -1774,7 +1797,7 @@ public partial class MainWindow : Window, IComponentConnector
 			TargetWords = source.CombinedTargetWords.ToList(),
 			BlockedEnabled = source.CombinedBlockedEnabled,
 			BlockedWords = source.CombinedBlockedWords.ToList(),
-			InvestmentEnabled = true,
+			InvestmentEnabled = source.CombinedOuterInvestmentRule != CombinedOuterInvestmentRule.Ignore,
 			InvestmentTargets = source.CombinedInvestmentTargets.ToList(),
 			CheckInvestmentWhenBlocked = source.CombinedCheckInvestmentWhenBlocked,
 			InGameStrategyTargets = source.CombinedInGameStrategyTargets.ToList(),
